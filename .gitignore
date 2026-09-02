@@ -1,0 +1,22 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.ruff_cache/
+.pytest_cache/
+.ty_cache/
+.DS_Store
+
+# Large data lives outside the repo. Anything that lands here by accident
+# stays untracked on purpose.
+data/
+*.mbox
+*.csv.gz
+*.jsonl
+*.npy
+*.parquet
+.env
+.tmp/
+*.jsonl.gz
