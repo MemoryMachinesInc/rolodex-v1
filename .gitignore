@@ -34,3 +34,5 @@ rolodex-v1*.toml
 # Local secrets. .env is already ignored; .env.local holds the live key.
 .env.local
 .env.*.local
+entity_lists
+umb-top-people.txt
