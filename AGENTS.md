@@ -163,6 +163,34 @@ pipeline inside it, so its corpus locations were module constants. Read it for
 the algorithms — `task_model/grounding.py` and `task_model/extraction.py` are
 the parts worth carrying over — not for its structure.
 
+## What a corpus is
+
+A corpus is a directory — `data/obama/`, `data/umb/` — holding exactly two
+things. Neither is built by this repo, and a run cannot start without both.
+
+**1. `source_docs/` — the text.** A flat directory of `.txt` files; the pack
+builder globs `*.txt` non-recursively, so nested subdirectories are invisible
+and a `.md` or `.eml` sitting there is silently not evidence. One document per
+file, plain text, and the filename is the document's identity in every citation
+the run emits — so name them stably, because renaming a file after a run
+detaches the profiles already built from the text that supports them. This is
+the *only* evidence: there is no memory regime and no second store, so a fact
+that is not in these files cannot be grounded and will not be emitted.
+
+**2. `resolved_entities_bundle.json` — who gets profiled.** It decides both the
+entity set and the surface forms retrieval searches for (see *Who gets
+profiled* above). It comes from the memorymachines API, which runs resolution
+over the same documents. **I do not have the endpoint**, so this file does not
+say how to request one — get the call from whoever owns that API, and take the
+bundle it returns unmodified. Its schema is documented in
+`src/rolodex_v1/resolved_entities.py`; a bundle whose alias probabilities are
+not a per-string distribution summing to 1.0 breaks what
+`--min-alias-probability` is for, which is trap 6.
+
+The two must be built from the same document set. A bundle resolved over a
+corpus the `source_docs/` directory does not contain yields entities with
+nothing to retrieve — empty packs, checkpointed and paid for.
+
 Nothing in this repo hardcodes a corpus. Every location is configuration:
 
 | | flag | env | `[paths]` key |

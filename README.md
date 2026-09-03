@@ -30,6 +30,22 @@ uv run python -m rolodex_v1.build_profiles \
 self-hosted server, anything else to OpenAI. Serve one with
 `modal deploy deploy/modal_qwen.py`.
 
+A corpus directory holds exactly two things, and a run needs both:
+
+```text
+data/obama/
+  source_docs/                    # flat directory of .txt files, one per document
+  resolved_entities_bundle.json   # who gets profiled, and what names to search for
+```
+
+`source_docs/` is the only evidence — `*.txt`, globbed non-recursively, so
+subdirectories and other extensions are invisible. Filenames are the document
+identity in every citation, so keep them stable.
+
+`resolved_entities_bundle.json` comes from the memorymachines API, resolved over
+that same document set. **The endpoint is not documented here** — get the call
+from whoever owns that API — and the bundle is used as returned.
+
 Point the checkout at a corpus by copying `configs/rolodex-v1.toml.example`
 to `configs/rolodex-v1.toml` and setting one key:
 
