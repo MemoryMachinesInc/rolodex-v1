@@ -23,7 +23,13 @@
 data = "../data"
 
 # Individual overrides, for when one location does not live under the root.
-# Each defaults to the name shown, resolved under `data`.
-# entities_bundle = "resolved_entities_bundle.json"
-# source_docs     = "source_docs"
+# Each defaults to the name shown, resolved under `data`. Name them separately
+# whenever the two inputs did not arrive as one directory -- an export dropped
+# beside the bundle rather than inside it is the usual case.
+# source_docs = "../data/obama"
+# entities_bundle = "../data/obama/resolved_entities_bundle.json"
 # out_dir         = "."
+#
+# `source_docs` is walked RECURSIVELY for `*.txt`, so the exporter's grouping by
+# origin (`email/`, `pdf/`, `plaud/`, ...) can be left exactly as it arrived.
+# Where the file came from is not evidence; only its text is.

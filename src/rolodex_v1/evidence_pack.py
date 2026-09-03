@@ -190,6 +190,47 @@ def select_windows(
     return merged
 
 
+def corpus_documents(corpus: Path) -> list[Path]:
+    """Every ``.txt`` under ``corpus``, at any depth, in a stable order.
+
+    The bundle's exporter files documents by the source they came from --
+    ``email/``, ``pdf/``, ``plaud/`` -- and that grouping is not evidence: a
+    fact is as citable from a transcript as from a message. So the walk is
+    recursive and the subdirectory is carried only in the path.
+
+    Sorting is on the corpus-relative path rather than the filename, so two
+    documents with the same name in different subdirectories still order the
+    same way on every machine and the pack stays byte-identical run to run.
+    """
+    return sorted(
+        corpus.rglob("*.txt"), key=lambda path: path.relative_to(corpus).parts
+    )
+
+
+def source_id_map(corpus: Path, paths: list[Path]) -> dict[Path, str]:
+    """Assign each document the id its citations will carry.
+
+    The stem alone, which is what a flat corpus could rely on, stops being
+    unique once the walk is recursive: two subdirectories may each hold a
+    ``notes.txt``, and a stem-keyed source dict would drop one of them and
+    silently attach its citations to the other's text. So a stem claimed by
+    more than one document falls back to the corpus-relative path for *every*
+    claimant -- ids stay short in the common case, and a collision is disowned
+    rather than resolved by arrival order.
+    """
+    counts: dict[str, int] = {}
+    for path in paths:
+        counts[path.stem] = counts.get(path.stem, 0) + 1
+    return {
+        path: (
+            path.stem
+            if counts[path.stem] == 1
+            else path.relative_to(corpus).with_suffix("").as_posix()
+        )
+        for path in paths
+    }
+
+
 def build_pack(
     corpus: Path,
     entity: ResolvedEntity,
@@ -199,7 +240,7 @@ def build_pack(
     min_probability: float = DEFAULT_MIN_PROBABILITY,
     recipe: PackRecipe = DEFAULT_RECIPE,
 ) -> EvidencePack:
-    """Scan every ``.txt`` in ``corpus`` for ``entity`` and build its pack.
+    """Scan every ``.txt`` under ``corpus``, at any depth, and build its pack.
 
     The entity is passed whole rather than as a name, because what to search for
     is a property of the resolution and nothing here should be re-deriving it
@@ -231,7 +272,8 @@ def build_pack(
     patterns = entity.mention_patterns(min_probability)
     if not patterns:
         raise ValueError(f"{entity.entity_id} has nothing to search for")
-    paths = sorted(corpus.glob("*.txt"))
+    paths = corpus_documents(corpus)
+    source_ids = source_id_map(corpus, paths)
 
     candidates: list[Candidate] = []
     for path in paths:
@@ -239,13 +281,15 @@ def build_pack(
         windows = select_windows(document, patterns, recipe)
         if not windows:
             continue
-        chunks = chunk_windows(document, windows, path.stem, recipe.chunk_length)
+        chunks = chunk_windows(document, windows, source_ids[path], recipe.chunk_length)
         if chunks:
             mentions = sum(len(pattern.findall(document)) for pattern in patterns)
             candidates.append(Candidate(mentions, path, document, chunks))
 
     # The tiebreak on filename is what makes the pack byte-identical run to run.
-    candidates.sort(key=lambda candidate: (-candidate.mentions, candidate.path.name))
+    candidates.sort(
+        key=lambda candidate: (-candidate.mentions, source_ids[candidate.path])
+    )
 
     addressing = LineAddressing()
     sources: dict[str, DocumentSource] = {}
@@ -268,9 +312,14 @@ def build_pack(
             doc_chars += len(chunk.text)
 
         subject = SUBJECT_LINE.search(document)
+        source_id = source_ids[path]
+        # The path is corpus-relative, not a bare filename: the agent's Read and
+        # Grep are rooted at the corpus, and a name alone does not say which
+        # subdirectory holds it.
+        relative = path.relative_to(corpus).as_posix()
         lines = [
-            f"## Source {path.stem}",
-            f"<!-- file: {path.name} | mentions: {candidate.mentions}"
+            f"## Source {source_id}",
+            f"<!-- file: {relative} | mentions: {candidate.mentions}"
             + (f" | subject: {subject.group(1).strip()[:160]}" if subject else "")
             + " -->",
         ]
@@ -288,9 +337,9 @@ def build_pack(
             continue
         addressing.commit(addressed)
 
-        sources[path.stem] = DocumentSource(
-            source_id=path.stem,
-            source=path.name,
+        sources[source_id] = DocumentSource(
+            source_id=source_id,
+            source=relative,
             source_revision="sha256:"
             + hashlib.sha256(document.encode("utf-8")).hexdigest(),
             document=document,

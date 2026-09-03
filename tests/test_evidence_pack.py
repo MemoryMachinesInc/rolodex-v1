@@ -24,7 +24,9 @@ from rolodex_v1.evidence_pack import (
     FIELD_CUES,
     NAME_WINDOW,
     build_pack,
+    corpus_documents,
     select_windows,
+    source_id_map,
 )
 from rolodex_v1.grounding import CHUNK_LENGTH
 from rolodex_v1.resolved_entities import Alias, ResolvedEntity, form_pattern
@@ -47,7 +49,10 @@ def corpus(tmp_path: Path, documents: dict[str, str]) -> Path:
     directory = tmp_path / "corpus"
     directory.mkdir(exist_ok=True)
     for stem, text in documents.items():
-        (directory / f"{stem}.txt").write_text(text, encoding="utf-8")
+        # A key may carry subdirectories -- the export arrives grouped by origin.
+        path = directory / f"{stem}.txt"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
     return directory
 
 
@@ -341,3 +346,63 @@ def test_every_printed_line_number_addresses_the_line_it_prints(tmp_path: Path) 
         assert chunk.text == text
         source = pack.context.sources[chunk.source_id]
         assert source.document[chunk.start_offset : chunk.end_offset] == text
+
+
+def test_documents_are_found_at_any_depth(tmp_path: Path) -> None:
+    """The exporter groups by origin; that grouping is not evidence.
+
+    A non-recursive glob over this layout finds nothing at all, so the whole
+    corpus would read as empty and every profile would be honestly, silently
+    unsupported.
+    """
+    directory = corpus(
+        tmp_path,
+        {
+            "email/one": "Josh Earnest sent it.",
+            "pdf/deep/two": "Josh Earnest signed it.",
+            "photos/ignored": "",
+        },
+    )
+    (directory / "pdf" / "not-text.md").write_text("Josh Earnest", encoding="utf-8")
+
+    pack = build_pack(
+        directory, person("Josh Earnest"), budget_chars=90_000, max_doc_chars=4_000
+    )
+    assert set(pack.context.sources) == {"one", "two"}
+    assert pack.context.sources["two"].source == "pdf/deep/two.txt"
+
+
+def test_a_stem_two_documents_claim_demotes_both_to_their_paths(
+    tmp_path: Path,
+) -> None:
+    """A citation id that names two documents attaches spans to the wrong text.
+
+    Keeping the stem for the first arrival and the path for the second would
+    make which id an artifact carries depend on directory order, so both are
+    demoted together.
+    """
+    directory = corpus(
+        tmp_path,
+        {"email/notes": "Josh Earnest wrote.", "pdf/notes": "Josh Earnest read."},
+    )
+    ids = source_id_map(directory, corpus_documents(directory))
+    assert set(ids.values()) == {"email/notes", "pdf/notes"}
+
+    pack = build_pack(
+        directory, person("Josh Earnest"), budget_chars=90_000, max_doc_chars=4_000
+    )
+    assert set(pack.context.sources) == {"email/notes", "pdf/notes"}
+
+
+def test_the_walk_orders_on_the_relative_path_not_the_filename(
+    tmp_path: Path,
+) -> None:
+    """Determinism survives subdirectories: the pack is byte-identical run to run."""
+    directory = corpus(
+        tmp_path,
+        {"pdf/b": "Josh Earnest.", "email/a": "Josh Earnest.", "email/z": "Josh."},
+    )
+    relative = [
+        path.relative_to(directory).as_posix() for path in corpus_documents(directory)
+    ]
+    assert relative == ["email/a.txt", "email/z.txt", "pdf/b.txt"]
