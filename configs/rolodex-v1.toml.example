@@ -1,0 +1,29 @@
+# Copy to `configs/rolodex-v1.toml` to point this checkout at a corpus.
+#
+# The real file is gitignored: where the data sits is a property of the machine,
+# not of the project. Discovery walks up from the working directory looking for
+# `configs/rolodex-v1.toml`, so one file serves runs started anywhere inside the
+# checkout.
+#
+# Precedence per location, highest first:
+#   1. the command-line flag
+#   2. that location's ROLODEX_V1_* environment variable
+#   3. its own key below
+#   4. `data` below, joined with the built-in name
+#   5. `data/` in the working directory
+#
+# Relative paths resolve against THIS FILE's directory, not the working
+# directory -- so a `data/` beside the repo root is `../data` from in here.
+# `~` is expanded. Absolute paths are the unambiguous option.
+
+[paths]
+
+# The data root. Setting only this moves all three locations together, which is
+# the usual case: an external disk, a scratch volume, a shared corpus.
+data = "../data"
+
+# Individual overrides, for when one location does not live under the root.
+# Each defaults to the name shown, resolved under `data`.
+# entities_bundle = "resolved_entities_bundle.json"
+# source_docs     = "source_docs"
+# out_dir         = "."
