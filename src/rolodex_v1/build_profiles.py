@@ -37,7 +37,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import gzip
 import hashlib
 import json
 import logging
@@ -266,13 +265,19 @@ class Config:
 
     @property
     def out_path(self) -> Path:
-        """The finished artifact.
+        """The finished artifact: one JSON object, entity id to profile.
 
-        The extension is .jsonl.gz, not this workspace's usual .csv.gz: a
-        profile is a nested object carrying _grounding and _sources sidecars,
-        and flattening it into columns loses the spans.
+        Not this workspace's usual .csv.gz, because a profile is a nested object
+        carrying _grounding and _sources sidecars and flattening it into columns
+        loses the spans. Not one file per entity either: the artifact is the set,
+        and a directory of them makes the obvious question -- what did this run
+        produce for X -- a directory scan rather than a key lookup.
+
+        Keyed by entity id and not by name, for the reason the whole pipeline is:
+        160 canonical names in the sample bundle are used by more than one
+        entity, so a name-keyed map silently drops profiles.
         """
-        return self.out_dir / f"{self.stem}.jsonl.gz"
+        return self.out_dir / f"{self.stem}.json"
 
     @property
     def work_dir(self) -> Path:
@@ -300,17 +305,56 @@ class Config:
         return tuple(inputs)
 
 
-def checkpoint_name(entity_id: str) -> str:
-    """A filename for one entity's checkpoint that cannot collide.
+def pack_name(entity_id: str) -> str:
+    """A filename for one entity's pack that cannot collide.
 
     Entity ids carry colons, so they are not filenames as they stand. The digest
     is what makes the sanitized form safe: two ids differing only in a character
-    that sanitizes away would otherwise share a file, and a resumed run would
-    report a paid result belonging to somebody else.
+    that sanitizes away would otherwise share a file, and the agent would be
+    handed evidence belonging to somebody else.
     """
     safe = re.sub(r"[^A-Za-z0-9._-]", "-", entity_id).strip("-")[:80]
     digest = hashlib.sha256(entity_id.encode("utf-8")).hexdigest()[:12]
-    return f"{safe}-{digest}.json"
+    return f"{safe}-{digest}.md"
+
+
+def read_checkpoints(path: Path) -> dict[str, dict]:
+    """Every checkpointed attempt in ``path``, keyed by entity id.
+
+    The log is append-only, so the last record for an id wins. Nothing in this
+    module appends twice for one entity -- ``generate`` skips an id already in
+    the log, and ``--force`` permits rewriting the *output*, not re-buying a
+    checkpoint -- so a duplicated id means the log was edited or concatenated by
+    hand, and taking the last is the reading that matches "append-only".
+
+    A line that does not parse, is not an object, or carries no ``entity_id`` is
+    skipped with a warning rather than raised on. All three are what a crash
+    mid-write leaves, and the alternative is that the crash the checkpoints
+    exist to survive makes the whole log unreadable and re-buys every profile
+    in it.
+    """
+    if not path.exists():
+        return {}
+    records: dict[str, dict] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            log.warning("ignoring an unreadable checkpoint line in %s", path)
+            continue
+        if not isinstance(record, dict) or not isinstance(record.get("entity_id"), str):
+            log.warning("ignoring a checkpoint line with no entity id in %s", path)
+            continue
+        records[record["entity_id"]] = record
+    return records
+
+
+def append_checkpoint(path: Path, record: dict) -> None:
+    """Append one attempt to the log, flushed before the next request starts."""
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
 def selectable(
@@ -573,7 +617,9 @@ async def generate(
 ) -> tuple[int, float]:
     """Build a pack and buy a profile for each entity, checkpointing as it goes.
 
-    Returns the number of profiles now on disk and what this invocation spent.
+    Returns how many of *these* entities are now checkpointed and what this
+    invocation spent -- not the size of the log, which may hold hundreds from
+    earlier, wider runs.
     Anything already checkpointed is skipped without a request, which is what
     makes an interrupted run resumable rather than repayable.
 
@@ -584,15 +630,17 @@ async def generate(
     if max_spend_usd is not None and not regime.prices_itself:
         raise ValueError(unenforceable_ceiling(regime.name) or "")
 
-    profiles_dir = cfg.work_dir / "profiles"
-    profiles_dir.mkdir(parents=True, exist_ok=True)
+    cfg.work_dir.mkdir(parents=True, exist_ok=True)
+    checkpoints = cfg.work_dir / "checkpoints.jsonl"
+    done = set(read_checkpoints(checkpoints))
 
     spent = 0.0
-    written = 0
+    # Only the ids this invocation asked for. The log may hold hundreds from
+    # earlier, wider runs, and counting those would report a --limit 5 resume as
+    # having produced every profile in the directory.
+    written = len(done & set(entities))
     for entity_id, entity in sorted(entities.items()):
-        checkpoint = profiles_dir / checkpoint_name(entity_id)
-        if checkpoint.exists():
-            written += 1
+        if entity_id in done:
             continue
 
         pack = build_pack(
@@ -610,42 +658,37 @@ async def generate(
         if pack.is_empty:
             # Nothing citable means nothing worth paying for. Recorded so a
             # resumed run does not rebuild the same empty pack.
-            checkpoint.write_text(
-                json.dumps(
-                    {
-                        "entity_id": entity_id,
-                        "profile": None,
-                        "reason": "no evidence",
-                        "pack_recipe": recipe,
-                    }
-                ),
-                encoding="utf-8",
+            append_checkpoint(
+                checkpoints,
+                {
+                    "entity_id": entity_id,
+                    "profile": None,
+                    "reason": "no evidence",
+                    "pack_recipe": recipe,
+                },
             )
             written += 1
             continue
 
-        pack_path = cfg.work_dir / "packs" / f"{checkpoint.stem}.md"
+        pack_path = cfg.work_dir / "packs" / pack_name(entity_id)
         pack_path.parent.mkdir(parents=True, exist_ok=True)
         pack_path.write_text(pack.text, encoding="utf-8")
 
         attempt = await regime.run(pack, pack_path)
 
-        checkpoint.write_text(
-            json.dumps(
-                {
-                    "entity_id": entity_id,
-                    "canonical_name": entity.canonical_name,
-                    "regime": regime.name,
-                    "model": cfg.model,
-                    "profile": attempt.profile,
-                    "cost_usd": attempt.cost_usd,
-                    "usage": attempt.usage,
-                    "pack_recipe": recipe,
-                    **attempt.detail,
-                },
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
+        append_checkpoint(
+            checkpoints,
+            {
+                "entity_id": entity_id,
+                "canonical_name": entity.canonical_name,
+                "regime": regime.name,
+                "model": cfg.model,
+                "profile": attempt.profile,
+                "cost_usd": attempt.cost_usd,
+                "usage": attempt.usage,
+                "pack_recipe": recipe,
+                **attempt.detail,
+            },
         )
         spent += attempt.cost_usd or 0.0
         written += 1
@@ -670,20 +713,28 @@ async def generate(
 def collect(cfg: Config) -> int:
     """Assemble the checkpoints into the finished artifact.
 
-    Sorted by entity id so the artifact is byte-identical for a given set of
-    checkpoints, whatever order they were bought in.
+    One JSON object, entity id to profile, sorted by id so the artifact is
+    byte-identical for a given set of checkpoints whatever order they were
+    bought in. Entities whose pack held no evidence are checkpointed but are not
+    keys here: an id mapping to null would read as a profile that came back
+    empty, which is a different and much more alarming thing than one nobody
+    paid for.
+
+    What the checkpoint carried and this does not -- the regime, the model, the
+    usage, the cost, the pack recipe -- stays in
+    ``{out}.work/checkpoints.jsonl``, which is the record of how the artifact
+    was built rather than the artifact.
     """
-    profiles_dir = cfg.work_dir / "profiles"
-    rows = []
-    for path in sorted(profiles_dir.glob("*.json")):
-        row = json.loads(path.read_text(encoding="utf-8"))
-        if row.get("profile") is not None:
-            rows.append(row)
-    rows.sort(key=lambda row: row["entity_id"])
-    with gzip.open(cfg.out_path, "wt", encoding="utf-8") as handle:
-        for row in rows:
-            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
-    return len(rows)
+    records = read_checkpoints(cfg.work_dir / "checkpoints.jsonl")
+    profiles = {
+        entity_id: record["profile"]
+        for entity_id, record in sorted(records.items())
+        if record.get("profile") is not None
+    }
+    cfg.out_path.write_text(
+        json.dumps(profiles, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    return len(profiles)
 
 
 def run(
@@ -695,8 +746,12 @@ def run(
     """Do the work and write cfg.out_path."""
     written, spent = asyncio.run(generate(cfg, entities, max_spend_usd=max_spend_usd))
     kept = collect(cfg)
+    # The two counts have different scopes on purpose: the first is this run's
+    # entities, the second is the whole artifact, which a resumed or narrowed
+    # run does not shrink.
     log.info(
-        "%d checkpoints, %d profiles with evidence, $%.2f spent this run",
+        "%d of this run's entities checkpointed, %d profiles in the artifact, "
+        "$%.2f spent this run",
         written,
         kept,
         spent,

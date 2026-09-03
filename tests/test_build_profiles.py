@@ -14,7 +14,6 @@ or a chat-completions request without either.
 from __future__ import annotations
 
 import asyncio
-import gzip
 import json
 from pathlib import Path
 from typing import Any
@@ -28,7 +27,6 @@ from rolodex_v1.build_profiles import (
     Attempt,
     Config,
     InContextRegime,
-    checkpoint_name,
     chosen,
     collect,
     generate,
@@ -36,6 +34,8 @@ from rolodex_v1.build_profiles import (
     main,
     make_regime,
     model_code,
+    pack_name,
+    read_checkpoints,
 )
 from rolodex_v1.evidence_pack import CUE_NEAR_NAME, NAME_WINDOW
 from rolodex_v1.resolved_entities import Alias, ResolvedEntity
@@ -203,14 +203,14 @@ def test_the_work_directory_is_named_after_its_output(tmp_path: Path) -> None:
     assert cfg.work_dir.name.startswith(cfg.stem)
 
 
-def test_a_checkpoint_name_cannot_collide() -> None:
+def test_a_pack_name_cannot_collide() -> None:
     """Two ids differing only in a sanitized character must not share a file.
 
-    Without the digest a resumed run would report a paid result belonging to
-    somebody else.
+    Without the digest the agent would be handed evidence belonging to somebody
+    else.
     """
-    assert checkpoint_name("proto:person:1") != checkpoint_name("proto/person:1")
-    assert ":" not in checkpoint_name("proto:person:1")
+    assert pack_name("proto:person:1") != pack_name("proto/person:1")
+    assert ":" not in pack_name("proto:person:1")
 
 
 def test_organizations_are_out_of_scope_by_default(tmp_path: Path) -> None:
@@ -229,7 +229,7 @@ def test_an_unscoped_run_is_refused(tmp_path: Path) -> None:
     write_bundle(tmp_path)
     (tmp_path / "source_docs").mkdir()
     assert main(argv(tmp_path)) == 1
-    assert not list(tmp_path.glob("*.jsonl.gz"))
+    assert not list(tmp_path.glob("profiles-*.json"))
 
 
 def test_an_unscoped_dry_run_is_allowed(tmp_path: Path) -> None:
@@ -279,16 +279,15 @@ def test_existing_output_is_not_rewritten(tmp_path: Path) -> None:
 def test_collect_assembles_checkpoints_in_a_stable_order(tmp_path: Path) -> None:
     """Two runs holding the same checkpoints must produce the same artifact."""
     cfg = config(tmp_path)
-    profiles = cfg.work_dir / "profiles"
-    profiles.mkdir(parents=True)
-    for entity_id in ("proto:b", "proto:a"):
-        (profiles / checkpoint_name(entity_id)).write_text(
-            json.dumps({"entity_id": entity_id, "profile": {"full_name": entity_id}})
-        )
+    write_checkpoints(
+        cfg,
+        {"entity_id": "proto:b", "profile": {"full_name": "B"}},
+        {"entity_id": "proto:a", "profile": {"full_name": "A"}},
+    )
     assert collect(cfg) == 2
-    with gzip.open(cfg.out_path, "rt", encoding="utf-8") as handle:
-        rows = [json.loads(line) for line in handle]
-    assert [row["entity_id"] for row in rows] == ["proto:a", "proto:b"]
+    profiles = json.loads(cfg.out_path.read_text(encoding="utf-8"))
+    assert list(profiles) == ["proto:a", "proto:b"]
+    assert profiles["proto:a"] == {"full_name": "A"}
 
 
 def test_an_entity_with_no_evidence_is_checkpointed_but_not_emitted(
@@ -296,12 +295,12 @@ def test_an_entity_with_no_evidence_is_checkpointed_but_not_emitted(
 ) -> None:
     """It must not be re-bought on resume, and it must not become an empty profile."""
     cfg = config(tmp_path)
-    profiles = cfg.work_dir / "profiles"
-    profiles.mkdir(parents=True)
-    (profiles / checkpoint_name("proto:x")).write_text(
-        json.dumps({"entity_id": "proto:x", "profile": None, "reason": "no evidence"})
+    write_checkpoints(
+        cfg, {"entity_id": "proto:x", "profile": None, "reason": "no evidence"}
     )
     assert collect(cfg) == 0
+    # Not a null-valued key: that reads as a profile that came back empty.
+    assert json.loads(cfg.out_path.read_text(encoding="utf-8")) == {}
 
 
 def test_the_regime_and_effort_are_in_the_filename(tmp_path: Path) -> None:
@@ -535,11 +534,14 @@ def generated(
 
 
 def checkpoints(cfg: Config) -> list[dict[str, Any]]:
-    directory = cfg.work_dir / "profiles"
-    return [
-        json.loads(path.read_text(encoding="utf-8"))
-        for path in sorted(directory.glob("*.json"))
-    ]
+    return list(read_checkpoints(cfg.work_dir / "checkpoints.jsonl").values())
+
+
+def write_checkpoints(cfg: Config, *records: dict[str, Any]) -> None:
+    cfg.work_dir.mkdir(parents=True, exist_ok=True)
+    (cfg.work_dir / "checkpoints.jsonl").write_text(
+        "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
+    )
 
 
 def test_a_checkpointed_entity_is_not_bought_again(tmp_path: Path) -> None:
@@ -571,7 +573,7 @@ def test_an_entity_with_no_evidence_is_checkpointed_without_a_request(
     assert row["reason"] == "no evidence"
 
 
-def test_the_pack_recipe_reaches_the_checkpoint_and_the_artifact(
+def test_the_pack_recipe_reaches_the_checkpoint(
     tmp_path: Path,
 ) -> None:
     """Two runs at different cue settings are otherwise identical on disk."""
@@ -585,9 +587,10 @@ def test_the_pack_recipe_reaches_the_checkpoint_and_the_artifact(
     assert recipe["min_alias_probability"] == cfg.min_alias_probability
     assert recipe["budget_chars"] == DEFAULT_PACK_BUDGET_CHARS
 
+    # The recipe stays on the checkpoint: the artifact is profiles, and the log
+    # beside it is the record of how they were built.
     collect(cfg)
-    with gzip.open(cfg.out_path, "rt", encoding="utf-8") as handle:
-        assert json.loads(handle.readline())["pack_recipe"] == recipe
+    assert list(json.loads(cfg.out_path.read_text(encoding="utf-8"))) == ["e1"]
 
 
 def test_an_empty_pack_records_its_recipe_too(tmp_path: Path) -> None:
@@ -688,3 +691,37 @@ def test_the_checkpoint_records_the_regime_that_ran(tmp_path: Path) -> None:
     assert row["regime"] == "fake"
     assert row["cost_usd"] == 1.0
     assert row["usage"] == {"prompt_tokens": 10}
+
+
+def test_a_narrowed_resume_counts_only_its_own_entities(tmp_path: Path) -> None:
+    """The log outlives the run that wrote it; its size is not this run's total.
+
+    Reporting every id in the log would tell a --limit 5 resume it produced the
+    hundreds of profiles an earlier, wider run had bought.
+    """
+    cfg = config(tmp_path, source_docs_dir=corpus_with(tmp_path, a="Ada Byron wrote."))
+    write_checkpoints(
+        cfg,
+        {"entity_id": "e1", "profile": {"full_name": "Ada"}},
+        {"entity_id": "elsewhere", "profile": {"full_name": "Someone"}},
+    )
+
+    written, spent = generated(cfg, {"e1": entity("e1", "Ada Byron")}, FakeRegime())
+
+    assert (written, spent) == (1, 0.0)
+
+
+def test_an_unreadable_checkpoint_line_does_not_lose_the_log(tmp_path: Path) -> None:
+    """A crash mid-write must cost the last record, not every profile above it."""
+    cfg = config(tmp_path)
+    cfg.work_dir.mkdir(parents=True, exist_ok=True)
+    (cfg.work_dir / "checkpoints.jsonl").write_text(
+        json.dumps({"entity_id": "e1", "profile": {"full_name": "Ada"}})
+        + "\n"
+        + "null\n"  # well-formed JSON, not a record
+        + json.dumps({"profile": {"full_name": "Nameless"}})
+        + "\n"  # no entity id
+        + '{"entity_id": "e2", "prof',  # truncated by the crash
+        encoding="utf-8",
+    )
+    assert list(read_checkpoints(cfg.work_dir / "checkpoints.jsonl")) == ["e1"]
