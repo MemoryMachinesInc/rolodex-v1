@@ -1,7 +1,8 @@
 # rolodex-v1
 
 Grounded Rolodex profile generation. Every emitted primitive value carries a
-span pointing back at the text that supports it.
+span pointing back at the text that supports it. A run writes one JSON file
+mapping entity id to profile.
 
 ```sh
 # Where a run would read and write, on this machine. Writes nothing, costs
@@ -34,24 +35,35 @@ A corpus directory holds exactly two things, and a run needs both:
 
 ```text
 data/obama/
-  source_docs/                    # flat directory of .txt files, one per document
+  email/  pdf/  plaud/  text/     # source documents; walked recursively
   resolved_entities_bundle.json   # who gets profiled, and what names to search for
 ```
 
-`source_docs/` is the only evidence — `*.txt`, globbed non-recursively, so
-subdirectories and other extensions are invisible. Filenames are the document
-identity in every citation, so keep them stable.
+The source documents are the only evidence: every `*.txt` at any depth under the
+configured directory, other extensions ignored. Filenames are the document
+identity in every citation, so keep them stable. The two locations are separate
+`[paths]` keys, so neither has to live inside the other.
 
 `resolved_entities_bundle.json` comes from the memorymachines API, resolved over
-that same document set. **The endpoint is not documented here** — get the call
-from whoever owns that API — and the bundle is used as returned.
+that same document set. **There is currently no way to retrieve one through that
+API**, so a corpus is only as new as the last bundle somebody handed over; the
+endpoint is deliberately not documented here. The bundle is used as returned.
 
 Point the checkout at a corpus by copying `configs/rolodex-v1.toml.example`
-to `configs/rolodex-v1.toml` and setting one key:
+to `configs/rolodex-v1.toml`. One key moves everything together:
 
 ```toml
 [paths]
 data = "/Volumes/corpus/obama"
+```
+
+Name the two inputs individually when the export did not arrive in the default
+shape — which is the usual case:
+
+```toml
+[paths]
+source_docs     = "../data/obama"
+entities_bundle = "../data/obama/resolved_entities_bundle.json"
 ```
 
 That file is found by walking up from the working directory. To run against a

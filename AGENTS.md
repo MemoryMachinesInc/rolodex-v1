@@ -103,13 +103,21 @@ than intersecting with it and quietly buying fewer profiles than were asked for.
   phone number under `participant_person`, so they rank. `--limit N` is the
   cheap smoke test instead — the first N by id, which is arbitrary but stable.
 
-- Every profile is checkpointed to `{out}/…​.work/profiles/` as it lands, so a
-  crash on entity 40 does not re-buy the first 39. Deleting that directory is
-  how you ask for a genuinely fresh — and re-paid — run. Each checkpoint, empty
-  packs included, carries `pack_recipe` — the frozen `PackRecipe` the evidence
-  was built from — and it rides through to the output record, so two runs at
-  different window or cue settings are distinguishable on disk. It is
-  deliberately not in the filename.
+- Every profile is appended to `{out}/…​.work/checkpoints.jsonl` as it lands, so
+  a crash on entity 40 does not re-buy the first 39. Deleting that file is how
+  you ask for a genuinely fresh — and re-paid — run. It is one append-only log
+  rather than a file per entity: the resume check is a set of ids read once, and
+  a directory whose entry count is the only record of progress invites the
+  half-finished-set confusion the output naming exists to prevent. A line that does not
+  parse, is not an object, or carries no `entity_id` — all of which a crash
+  mid-write can leave — is skipped with a warning rather than making the whole
+  log unreadable and re-buying everything in it.
+- **The checkpoint log carries what the artifact does not.** Each record, empty
+  packs included, holds the regime, the model, the usage, the cost and
+  `pack_recipe` — the frozen `PackRecipe` the evidence was built from, so two
+  runs at different window or cue settings are distinguishable on disk. The
+  finished artifact is profiles and nothing else, so that provenance lives only
+  here: keep the `.work` directory of a run whose numbers you intend to quote.
 - The agent is sandboxed by `can_use_tool`: read-only tools, and only inside the
   pack directory and the corpus. It is a hard deny, not a prompt — a batch run
   has nobody to answer one.
@@ -155,41 +163,52 @@ Whether the tuned addendum helps *under this regime* is unmeasured — it was
 tuned against a single-request regime. That is a number to produce, not an
 assumption to build on.
 
-## Where this came from, and where the data is
-
-The predecessor is `~/dev/z-r-eval_prompt_and_autotune/src/tune_prompt/rolodex_v1/`
-(and its `scripts/rolodex_v1/`). It was a prompt-tuning adapter that grew a
-pipeline inside it, so its corpus locations were module constants. Read it for
-the algorithms — `task_model/grounding.py` and `task_model/extraction.py` are
-the parts worth carrying over — not for its structure.
-
 ## What a corpus is
 
 A corpus is a directory — `data/obama/`, `data/umb/` — holding exactly two
 things. Neither is built by this repo, and a run cannot start without both.
 
-**1. `source_docs/` — the text.** A flat directory of `.txt` files; the pack
-builder globs `*.txt` non-recursively, so nested subdirectories are invisible
-and a `.md` or `.eml` sitting there is silently not evidence. One document per
-file, plain text, and the filename is the document's identity in every citation
-the run emits — so name them stably, because renaming a file after a run
-detaches the profiles already built from the text that supports them. This is
-the *only* evidence: there is no memory regime and no second store, so a fact
-that is not in these files cannot be grounded and will not be emitted.
+**1. the source documents — the text.** Every `.txt` **at any depth** under the
+configured directory, one document per file, plain text. The export arrives
+grouped by where a document came from (`email/`, `pdf/`, `plaud/`, `text/`) and
+that grouping is deliberately not carried into the evidence: a fact is as
+citable from a transcript as from a message, so `corpus_documents` walks
+recursively and keeps the subdirectory only in the path. Anything that is not
+`.txt` is silently not evidence.
+
+The filename stem is the document's identity in every citation the run emits, so
+name them stably — renaming a file after a run detaches the profiles already
+built from the text that supports them. A stem claimed by two documents in
+different subdirectories would make that identity a lie, so `source_id_map`
+demotes *both* claimants to their corpus-relative path rather than letting the
+second silently overwrite the first in the source dict. Ids stay short in the
+common case; the Obama export has no collisions among its 5,425 files.
+
+This is the *only* evidence: there is no memory regime and no second store, so a
+fact that is not in these files cannot be grounded and will not be emitted.
 
 **2. `resolved_entities_bundle.json` — who gets profiled.** It decides both the
 entity set and the surface forms retrieval searches for (see *Who gets
 profiled* above). It comes from the memorymachines API, which runs resolution
-over the same documents. **I do not have the endpoint**, so this file does not
-say how to request one — get the call from whoever owns that API, and take the
-bundle it returns unmodified. Its schema is documented in
+over the same documents. **There is currently no way to fetch one through that
+API**, so the bundles on this machine are the ones somebody handed over, a
+corpus cannot be re-resolved on demand, and this file deliberately records no
+endpoint. Take a bundle as it arrives and do not edit it. Its schema is documented in
 `src/rolodex_v1/resolved_entities.py`; a bundle whose alias probabilities are
 not a per-string distribution summing to 1.0 breaks what
 `--min-alias-probability` is for, which is trap 6.
 
+`source_docs` and `entities_bundle` are separate `[paths]` keys, so whatever
+shape the export arrived in is named directly rather than rearranged on disk to
+satisfy the default layout — the working Obama config puts the bundle *inside*
+the document directory, which is harmless because the walk only collects `.txt`.
+Setting only `data` still works for a corpus that does hang off one root.
+
 The two must be built from the same document set. A bundle resolved over a
 corpus the `source_docs/` directory does not contain yields entities with
 nothing to retrieve — empty packs, checkpointed and paid for.
+
+## Where the data is configured
 
 Nothing in this repo hardcodes a corpus. Every location is configuration:
 
@@ -200,7 +219,9 @@ Nothing in this repo hardcodes a corpus. Every location is configuration:
 | output directory | `--out-dir` | — | `out_dir` |
 
 All three default under one `data/` directory, so the setting worth reaching for
-is usually the root they hang off. Copy `configs/rolodex-v1.toml.example` to
+is usually the root they hang off — but only the defaults assume that shape, and
+an export that arrived with the bundle beside or inside it is named directly
+instead. Copy `configs/rolodex-v1.toml.example` to
 `configs/rolodex-v1.toml` and set one key:
 
 ```toml
@@ -251,6 +272,14 @@ Only paths are configurable. Model, context, variant and the alias threshold
 stay on the command line: they are encoded in the output filename, and a config
 file that quietly changed one would break the promise that the name describes
 the artifact.
+
+## Where this came from
+
+The predecessor is `~/dev/z-r-eval_prompt_and_autotune/src/tune_prompt/rolodex_v1/`
+(and its `scripts/rolodex_v1/`). It was a prompt-tuning adapter that grew a
+pipeline inside it, so its corpus locations were module constants. Read it for
+the algorithms — `task_model/grounding.py` and `task_model/extraction.py` are
+the parts worth carrying over — not for its structure.
 
 What those pointed at in the predecessor, none of which this repo depends on:
 
@@ -483,17 +512,26 @@ read `modal app logs` before waiting on it.
   profile was built from, and the addendum digest is content-keyed rather than
   path-keyed because renaming the prompt must not fork the artifact while
   editing it must.
-  - The pack recipe is the deliberate exception (see above): recoverable from
-    any finished artifact, but absent from the name. The cost of that choice is
-    that two runs whose recipes differ collide on one path and the second
-    silently loses to the incremental skip. Change a pack knob, change
-    `--out-dir` with it.
+  - The pack recipe is the deliberate exception (see above), and it is now the
+    expensive one: it is in neither the name nor the artifact, only in the run's
+    `.work/checkpoints.jsonl`. So two runs whose recipes differ collide on one
+    path, the second silently loses to the incremental skip, and deleting the
+    `.work` directory of the survivor leaves a file nothing on disk explains.
+    Change a pack knob, change `--out-dir` with it.
   The converse is why `--qwen-base-url` is absent: two runs of the same model at
   the same effort are the same artifact whichever host answered, and putting the
   URL in the name would split one result across two files.
-- Output is `.jsonl.gz`, not this workspace's usual `.csv.gz`: a profile is a
-  nested object carrying `_grounding` and `_sources` sidecars, and flattening it
-  into columns loses the spans.
+- Output is **one `.json` object, entity id to profile** — not this workspace's
+  usual `.csv.gz`, because a profile is a nested object carrying `_grounding`
+  and `_sources` sidecars and flattening it into columns loses the spans; and
+  not one file per entity, because the artifact is the set and "what did this
+  run produce for X" should be a key lookup rather than a directory scan. Keyed
+  by entity id for the reason the rest of the pipeline is: 160 canonical names
+  in the sample bundle belong to more than one entity, so a name-keyed map
+  silently drops profiles. An entity whose pack held no evidence is checkpointed
+  but is **not** a key — an id mapping to null would read as a profile that came
+  back empty, which is a different and more alarming thing than one nobody
+  bought.
 - Scripts are incremental — re-running skips outputs already on disk unless
   `--force`.
 - A new corpus **location** is a key in `settings.LAYOUT`, not a new environment
