@@ -1,0 +1,670 @@
+{
+  "$defs": {
+    "Biography": {
+      "additionalProperties": false,
+      "description": "Exact biography object requested from OpenAI.\n\nEvery key is required. Unsupported scalar and nested-object values are\nrepresented by ``null``; unsupported collections are represented by ``[]``.",
+      "properties": {
+        "age": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Age"
+        },
+        "aliases": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "birthday": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Birthday"
+        },
+        "character_context": {
+          "$ref": "#/$defs/CharacterContext"
+        },
+        "city": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "City"
+        },
+        "common_connections": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Common Connections",
+          "type": "array"
+        },
+        "communication_style": {
+          "anyOf": [
+            {
+              "enum": [
+                "formal",
+                "casual",
+                "slow responder"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Communication Style"
+        },
+        "country": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Country"
+        },
+        "current_positions": {
+          "items": {
+            "$ref": "#/$defs/CurrentPosition"
+          },
+          "title": "Current Positions",
+          "type": "array"
+        },
+        "education": {
+          "items": {
+            "$ref": "#/$defs/Education"
+          },
+          "title": "Education",
+          "type": "array"
+        },
+        "emails": {
+          "items": {
+            "$ref": "#/$defs/Email"
+          },
+          "title": "Emails",
+          "type": "array"
+        },
+        "expertise": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Expertise",
+          "type": "array"
+        },
+        "first_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "First Name"
+        },
+        "full_name": {
+          "title": "Full Name",
+          "type": "string"
+        },
+        "gender": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Gender"
+        },
+        "height": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Height"
+        },
+        "how_met": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "How Met"
+        },
+        "industries": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Industries",
+          "type": "array"
+        },
+        "interests": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Interests",
+          "type": "array"
+        },
+        "introduced_by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Introduced By"
+        },
+        "languages": {
+          "items": {
+            "$ref": "#/$defs/Language"
+          },
+          "title": "Languages",
+          "type": "array"
+        },
+        "last_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Last Name"
+        },
+        "phones": {
+          "items": {
+            "$ref": "#/$defs/Phone"
+          },
+          "title": "Phones",
+          "type": "array"
+        },
+        "previous_positions": {
+          "items": {
+            "$ref": "#/$defs/PreviousPosition"
+          },
+          "title": "Previous Positions",
+          "type": "array"
+        },
+        "pronouns": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Pronouns"
+        },
+        "publications": {
+          "items": {
+            "$ref": "#/$defs/Publication"
+          },
+          "title": "Publications",
+          "type": "array"
+        },
+        "relationship_to_user": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Relationship To User"
+        },
+        "social_profiles": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SocialProfiles"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "spouse": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Spouse"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "type": {
+          "anyOf": [
+            {
+              "enum": [
+                "colleague",
+                "boss",
+                "mentor",
+                "client",
+                "friend",
+                "acquaintance",
+                "other"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Type"
+        }
+      },
+      "required": [
+        "full_name",
+        "first_name",
+        "last_name",
+        "age",
+        "height",
+        "pronouns",
+        "gender",
+        "aliases",
+        "languages",
+        "emails",
+        "phones",
+        "social_profiles",
+        "city",
+        "country",
+        "current_positions",
+        "previous_positions",
+        "expertise",
+        "industries",
+        "education",
+        "type",
+        "relationship_to_user",
+        "character_context",
+        "how_met",
+        "introduced_by",
+        "common_connections",
+        "birthday",
+        "spouse",
+        "interests",
+        "publications",
+        "communication_style"
+      ],
+      "title": "Biography",
+      "type": "object"
+    },
+    "CharacterContext": {
+      "additionalProperties": false,
+      "properties": {
+        "bullets": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Bullets",
+          "type": "array"
+        },
+        "classification": {
+          "enum": [
+            "core_character",
+            "side_character"
+          ],
+          "title": "Classification",
+          "type": "string"
+        }
+      },
+      "required": [
+        "classification",
+        "bullets"
+      ],
+      "title": "CharacterContext",
+      "type": "object"
+    },
+    "CurrentPosition": {
+      "additionalProperties": false,
+      "properties": {
+        "company": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Company"
+        },
+        "department": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Department"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Title"
+        }
+      },
+      "required": [
+        "title",
+        "company",
+        "department"
+      ],
+      "title": "CurrentPosition",
+      "type": "object"
+    },
+    "Education": {
+      "additionalProperties": false,
+      "properties": {
+        "degree": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Degree"
+        },
+        "field": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Field"
+        },
+        "institution": {
+          "title": "Institution",
+          "type": "string"
+        }
+      },
+      "required": [
+        "institution",
+        "degree",
+        "field"
+      ],
+      "title": "Education",
+      "type": "object"
+    },
+    "Email": {
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "title": "Address",
+          "type": "string"
+        }
+      },
+      "required": [
+        "address"
+      ],
+      "title": "Email",
+      "type": "object"
+    },
+    "GroundingItem": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "spans": {
+          "items": {
+            "$ref": "#/$defs/GroundingSpan"
+          },
+          "title": "Spans",
+          "type": "array"
+        }
+      },
+      "required": [
+        "path",
+        "spans"
+      ],
+      "title": "GroundingItem",
+      "type": "object"
+    },
+    "GroundingSpan": {
+      "additionalProperties": false,
+      "properties": {
+        "end_line": {
+          "title": "End Line",
+          "type": "integer"
+        },
+        "start_line": {
+          "title": "Start Line",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start_line",
+        "end_line"
+      ],
+      "title": "GroundingSpan",
+      "type": "object"
+    },
+    "Language": {
+      "additionalProperties": false,
+      "properties": {
+        "language": {
+          "title": "Language",
+          "type": "string"
+        },
+        "proficiency": {
+          "anyOf": [
+            {
+              "enum": [
+                "native",
+                "fluent",
+                "conversational",
+                "basic"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Proficiency"
+        }
+      },
+      "required": [
+        "language",
+        "proficiency"
+      ],
+      "title": "Language",
+      "type": "object"
+    },
+    "Phone": {
+      "additionalProperties": false,
+      "properties": {
+        "number": {
+          "title": "Number",
+          "type": "string"
+        }
+      },
+      "required": [
+        "number"
+      ],
+      "title": "Phone",
+      "type": "object"
+    },
+    "PreviousPosition": {
+      "additionalProperties": false,
+      "properties": {
+        "company": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Company"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Title"
+        }
+      },
+      "required": [
+        "title",
+        "company"
+      ],
+      "title": "PreviousPosition",
+      "type": "object"
+    },
+    "Publication": {
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "venue": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Venue"
+        },
+        "year": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Year"
+        }
+      },
+      "required": [
+        "title",
+        "venue",
+        "year"
+      ],
+      "title": "Publication",
+      "type": "object"
+    },
+    "SocialProfiles": {
+      "additionalProperties": false,
+      "properties": {
+        "linkedin": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Linkedin"
+        },
+        "website": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Website"
+        }
+      },
+      "required": [
+        "linkedin",
+        "website"
+      ],
+      "title": "SocialProfiles",
+      "type": "object"
+    },
+    "Spouse": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "Spouse",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "grounding": {
+      "items": {
+        "$ref": "#/$defs/GroundingItem"
+      },
+      "title": "Grounding",
+      "type": "array"
+    },
+    "profile": {
+      "$ref": "#/$defs/Biography"
+    }
+  },
+  "required": [
+    "profile",
+    "grounding"
+  ],
+  "title": "GroundedBiographyResponse",
+  "type": "object"
+}
