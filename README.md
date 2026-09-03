@@ -44,10 +44,22 @@ configured directory, other extensions ignored. Filenames are the document
 identity in every citation, so keep them stable. The two locations are separate
 `[paths]` keys, so neither has to live inside the other.
 
-`resolved_entities_bundle.json` comes from the memorymachines API, resolved over
-that same document set. **There is currently no way to retrieve one through that
-API**, so a corpus is only as new as the last bundle somebody handed over; the
-endpoint is deliberately not documented here. The bundle is used as returned.
+Both halves can be fetched instead of pointed at, if the config carries a
+`[fetch]` table:
+
+```sh
+uv run python -m rolodex_v1.fetch_corpus --dry-run     # what it would pull, and where
+uv run python -m rolodex_v1.fetch_corpus               # the bundle and the documents
+uv run python -m rolodex_v1.fetch_corpus --from-dump ./source_docs_dump
+```
+
+**The two halves need two different credentials.** The bundle takes a master
+`x-api-key` (`$MM_API_KEY`); the documents take a Firebase refresh token
+(`$MM_REFRESH_TOKEN`), because the files routes reject an API key outright. Run
+`--only bundle` or `--only source-docs` if you hold one of the two. Documents
+arrive as JSON and land as `.txt`, which is what the pack builder reads. The
+`[fetch]` table must name its `environment`, and an existing bundle is left
+alone unless you pass `--force`.
 
 Point the checkout at a corpus by copying `configs/rolodex-v1.toml.example`
 to `configs/rolodex-v1.toml`. One key moves everything together:

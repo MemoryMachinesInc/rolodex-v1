@@ -166,7 +166,9 @@ assumption to build on.
 ## What a corpus is
 
 A corpus is a directory — `data/obama/`, `data/umb/` — holding exactly two
-things. Neither is built by this repo, and a run cannot start without both.
+things. Neither is built by this repo. Both can be
+*fetched* by it (see below) or pointed at where they already sit, and a run
+cannot start without both.
 
 **1. the source documents — the text.** Every `.txt` **at any depth** under the
 configured directory, one document per file, plain text. The export arrives
@@ -190,11 +192,12 @@ fact that is not in these files cannot be grounded and will not be emitted.
 **2. `resolved_entities_bundle.json` — who gets profiled.** It decides both the
 entity set and the surface forms retrieval searches for (see *Who gets
 profiled* above). It comes from the memorymachines API, which runs resolution
-over the same documents. **There is currently no way to fetch one through that
-API**, so the bundles on this machine are the ones somebody handed over, a
-corpus cannot be re-resolved on demand, and this file deliberately records no
-endpoint. Take a bundle as it arrives and do not edit it. Its schema is documented in
-`src/rolodex_v1/resolved_entities.py`; a bundle whose alias probabilities are
+over the same documents. `fetch_corpus` pulls it from
+`GET /v1/entities/resolved`; what that endpoint *cannot* do is trigger a
+resolution, so a 404 there means nobody has built a bundle for that user yet and
+no flag here fixes it. Take a bundle as it arrives and do not edit it. Its
+schema is documented in `src/rolodex_v1/resolved_entities.py`; a bundle whose
+alias probabilities are
 not a per-string distribution summing to 1.0 breaks what
 `--min-alias-probability` is for, which is trap 6.
 
@@ -207,6 +210,82 @@ Setting only `data` still works for a corpus that does hang off one root.
 The two must be built from the same document set. A bundle resolved over a
 corpus the `source_docs/` directory does not contain yields entities with
 nothing to retrieve — empty packs, checkpointed and paid for.
+
+## Fetching a corpus
+
+`uv run python -m rolodex_v1.fetch_corpus --dry-run` fills the two configured
+locations from the memorymachines API, and is the alternative to being handed an
+export. It is a **separate command from `build_profiles`** on purpose: a run that
+spends money per entity should not also decide to pull thousands of documents,
+and a corpus that changes underneath a half-finished profile set is one nobody
+can explain afterwards. `src/rolodex_v1/memorymachines.py` is the client;
+`fetch_corpus.py` is the CLI. Both were reverse-engineered from the two shell
+scripts at the repo root, which remain the working record of what the endpoints
+accept.
+
+**The two halves take two different credentials, and one API key cannot fetch a
+corpus.** The bundle route takes a master `x-api-key` (`$MM_API_KEY`). The files
+routes go through the API's `_require_firebase_principal_from_request` and reject
+an API key with 403, so they need a Firebase refresh token (`$MM_REFRESH_TOKEN`)
+exchanged at `securetoken.googleapis.com` for an ID token that lives an hour.
+Each half asks for its own credential at the point it needs it and names the
+variable it wanted, because a 403 from the files route otherwise reads as a
+permissions problem with the key you *do* have. `--only bundle` and
+`--only source-docs` run one half on a machine holding one credential.
+
+- **No secret goes in the config file.** `[fetch]` names the *variable*
+  (`api_key_env`, `refresh_token_env`); the value is read by `credentials` from
+  the environment or the gitignored `.env.local`. A key in a config is a key in
+  every copy of that config, and this one is gitignored only by convention.
+  The refresh token has two more places it may be found, both outside the
+  repo and both where the Engramme desktop app's own dump script looks: the
+  token file `~/.engramme/engramme_refresh_token.txt`, and last the macOS
+  keychain item the app writes. The keychain is last because it is the only
+  source that can stop and ask a human something — the item is ACL'd to the
+  app's signature, so reading it from a shell raises a consent dialog, and a
+  shell with nowhere to show one hangs like a slow download (trap 9). The read
+  is bounded at 20 seconds and the failure names the two ways out that need no
+  dialog.
+- **A missing `[fetch]` table is a refusal, not a default.** Inventing
+  `environment = "prod"` would ask a production API for somebody's documents on
+  the strength of nothing the user wrote down. So is a table that does not
+  name its `environment`: the key has no default, because it is the one value
+  that decides whose API is asked. Unknown keys are rejected too — a misspelled
+  `sources` would quietly fetch all thirty source types. The table may hold
+  `environment`, `base_url`, `sources` and the two credential-variable names,
+  and nothing that changes what the bundle *is*: there is no `case` filter and
+  no `top_k`, because the bundle lands under one fixed name and a subset under
+  that name is a different artifact nothing downstream can tell apart.
+- **Both halves are incremental**, like every script here. A document already
+  on disk is not downloaded again, so an interrupted fetch resumes. An existing
+  bundle is left alone unless `--force`: it is what every checkpointed entity
+  id *means*, so replacing it under a half-built profile set would detach the
+  profiles already bought from the ids that name them. `--dry-run` says which
+  it would do.
+- **The ID token is re-minted on a timer, not on a 401.** A download run outlives
+  an hour, and rediscovering the expiry as a failed request would file it as a
+  missing document rather than an expired credential.
+- **A truncated bundle is refused rather than written.** The server caps `top_k`
+  at 50,000 and reports `count` against `total_in_bundle`; a bundle short of its
+  own total is a corpus missing people, and every count downstream would still
+  report success. The request always asks for the cap, and a response whose
+  counts are not integers is refused as not being a bundle at all — a check
+  that shrugged at a count it could not compare would be no check.
+- **Documents are converted as they arrive, not in a pass afterwards.** The
+  download route answers `{item_id, source_type, content, user_id}` and only
+  `content` is evidence, so each document lands as `.txt` immediately. An
+  interrupted fetch then leaves usable evidence rather than a directory of JSON
+  that the pack builder reads as an empty corpus. A payload with no usable
+  `content` is refused by name — an empty `.txt` is evidence that exists,
+  matches nothing, and makes an entity look unmentioned. A refused document is
+  named in the log and fails the run's exit code even when every other document
+  landed: a corpus quietly missing documents is what the exit code is for.
+- **`--from-dump DIR` converts what `dump_all_source_docs.sh` already
+  downloaded**, and reads that directory without emptying it: the dump is the
+  only copy of what the API actually answered, and a conversion that consumed
+  its input could not be re-run when the shape turns out to have been misread.
+- Item ids become filenames, so they are sanitized rather than trusted: an id
+  carrying `..` would otherwise write outside the corpus.
 
 ## Where the data is configured
 
