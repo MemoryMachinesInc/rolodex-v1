@@ -657,13 +657,22 @@ async def generate(
         recipe = asdict(pack.recipe)
         if pack.is_empty:
             # Nothing citable means nothing worth paying for. Recorded so a
-            # resumed run does not rebuild the same empty pack.
+            # resumed run does not rebuild the same empty pack, and with the
+            # same provenance a bought profile gets: which regime and model
+            # this run would have used, and that it spent nothing. The cost is
+            # 0.0, not None -- nothing bought is priced, unlike an attempt the
+            # regime cannot price.
             append_checkpoint(
                 checkpoints,
                 {
                     "entity_id": entity_id,
+                    "canonical_name": entity.canonical_name,
+                    "regime": regime.name,
+                    "model": cfg.model,
                     "profile": None,
                     "reason": "no evidence",
+                    "cost_usd": 0.0,
+                    "usage": None,
                     "pack_recipe": recipe,
                 },
             )

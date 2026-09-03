@@ -571,6 +571,12 @@ def test_an_entity_with_no_evidence_is_checkpointed_without_a_request(
     (row,) = checkpoints(cfg)
     assert row["profile"] is None
     assert row["reason"] == "no evidence"
+    # The log carries what the artifact does not, empty packs included: which
+    # regime and model the run would have bought with, and that it spent nothing.
+    assert row["regime"] == regime.name
+    assert row["model"] == cfg.model
+    assert row["cost_usd"] == 0.0
+    assert row["usage"] is None
 
 
 def test_the_pack_recipe_reaches_the_checkpoint(
