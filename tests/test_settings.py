@@ -208,7 +208,11 @@ def test_every_key_the_example_offers_is_actually_accepted(tmp_path: Path) -> No
     import re
 
     text = Path("configs/rolodex-v1.toml.example").read_text(encoding="utf-8")
-    live = re.sub(r"^# (\w+\s*=)", r"\1", text, flags=re.MULTILINE)
+    # Table headers are uncommented too, or every key below a commented-out
+    # `# [fetch]` would be read as a [paths] key and the example would look
+    # wrong for a reason it does not have.
+    live = re.sub(r"^# (\w+\s*=|\[\w+\])", r"\1", text, flags=re.MULTILINE)
     config = tmp_path / "rolodex-v1.toml"
     config.write_text(live, encoding="utf-8")
-    settings.read_config(config)  # raises on an unknown key
+    settings.read_config(config)  # raises on an unknown [paths] key
+    settings.read_fetch(config)  # and on an unknown [fetch] key

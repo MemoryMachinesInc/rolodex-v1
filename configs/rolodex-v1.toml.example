@@ -33,3 +33,35 @@ data = "../data"
 # `source_docs` is walked RECURSIVELY for `*.txt`, so the exporter's grouping by
 # origin (`email/`, `pdf/`, `plaud/`, ...) can be left exactly as it arrived.
 # Where the file came from is not evidence; only its text is.
+
+# ── fetching a corpus instead of pointing at one ────────────────────────────
+# With a [fetch] table, `python -m rolodex_v1.fetch_corpus` fills the two
+# locations above from the memorymachines API. Without one, fetching is refused
+# rather than defaulted -- inventing an environment here would ask a production
+# API for somebody's documents on the strength of nothing written down.
+#
+# THE TWO HALVES NEED TWO DIFFERENT CREDENTIALS, and cannot share one:
+#   * the bundle takes a master `x-api-key`               -> $MM_API_KEY
+#   * the documents take a Firebase refresh token, because the files routes
+#     reject an API key with 403                          -> $MM_REFRESH_TOKEN
+# `--only bundle` / `--only source-docs` runs one half on a machine that holds
+# one credential.
+#
+# No secret goes in this file: it names the VARIABLE, and the value is read from
+# the environment or the gitignored .env.local.
+#
+# Both halves are incremental. Documents already on disk are skipped, so an
+# interrupted fetch resumes; an existing bundle is left alone unless --force,
+# because it is what every checkpointed entity id means.
+
+# [fetch]
+# environment = "prod"          # REQUIRED, prod | staging | dev. No default:
+#                               # it decides whose API is asked.
+# base_url = "https://..."      # override the environment's base
+# sources = ["email", "pdf"]    # default: every source type the API defines
+# api_key_env = "MM_API_KEY"
+# refresh_token_env = "MM_REFRESH_TOKEN"
+#
+# There is deliberately no top_k, case or include_aliases. The bundle is always
+# fetched whole and with aliases: a subset under the same filename is a
+# different artifact that nothing downstream can tell apart.
