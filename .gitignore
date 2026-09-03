@@ -8,6 +8,7 @@ dist/
 .pytest_cache/
 .ty_cache/
 .DS_Store
+.engramme
 
 # Large data lives outside the repo. Anything that lands here by accident
 # stays untracked on purpose.
@@ -20,3 +21,16 @@ data/
 .env
 .tmp/
 *.jsonl.gz
+
+# Where the data lives is a property of the machine, not the project. The
+# pattern has no slash, so it matches configs/rolodex-v1.toml and any copy
+# that lands elsewhere, and the glob covers the per-machine variants people
+# actually keep (rolodex-v1.umb.toml and friends). The negation keeps
+# configs/rolodex-v1.toml.example tracked, since it is the one that is a
+# property of the project.
+rolodex-v1*.toml
+!rolodex-v1.toml.example
+
+# Local secrets. .env is already ignored; .env.local holds the live key.
+.env.local
+.env.*.local

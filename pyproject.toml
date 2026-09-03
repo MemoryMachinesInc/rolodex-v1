@@ -4,7 +4,11 @@ version = "0.1.0"
 description = "Grounded Rolodex profile generation from a memories bundle or source-document chunks"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "claude-agent-sdk>=0.2.131",
+    "pydantic>=2.13.5",
+    "tiktoken>=0.14.0",
+]
 
 [dependency-groups]
 dev = [
@@ -52,6 +56,12 @@ skip-magic-trailing-comma = false
 
 [tool.ty.environment]
 python-version = "3.13"
+
+[tool.ty.src]
+# deploy/ runs on Modal's infrastructure, not here: `modal` is deliberately not
+# a dependency of this project, so its imports are never resolvable locally and
+# ty would fail the commit gate on a file it cannot meaningfully check.
+exclude = ["deploy"]
 
 [tool.ty.rules]
 # Third-party packages that ship no types are not this project's problem.
