@@ -40,12 +40,11 @@ data = "../data"
 # rather than defaulted -- inventing an environment here would ask a production
 # API for somebody's documents on the strength of nothing written down.
 #
-# THE TWO HALVES NEED TWO DIFFERENT CREDENTIALS, and cannot share one:
-#   * the bundle takes a master `x-api-key`               -> $MM_API_KEY
-#   * the documents take a Firebase refresh token, because the files routes
-#     reject an API key with 403                          -> $MM_REFRESH_TOKEN
-# `--only bundle` / `--only source-docs` runs one half on a machine that holds
-# one credential.
+# ONE CREDENTIAL FETCHES BOTH HALVES: a Firebase refresh token
+# (-> $MM_REFRESH_TOKEN), exchanged for the short-lived ID token that the bundle
+# route and the files routes both take as a bearer. The bundle used to want a
+# master `x-api-key` and no longer does. `--only bundle` / `--only source-docs`
+# picks a half; it is no longer a way of working around a missing credential.
 #
 # No secret goes in this file: it names the VARIABLE, and the value is read from
 # the environment or the gitignored .env.local.
@@ -59,7 +58,6 @@ data = "../data"
 #                               # it decides whose API is asked.
 # base_url = "https://..."      # override the environment's base
 # sources = ["email", "pdf"]    # default: every source type the API defines
-# api_key_env = "MM_API_KEY"
 # refresh_token_env = "MM_REFRESH_TOKEN"
 #
 # There is deliberately no top_k, case or include_aliases. The bundle is always

@@ -22,6 +22,12 @@
 #   GET /v1/entities/resolved?top_k=&case=&include_aliases=
 #   header: x-api-key: <user api key>
 #
+#   NOTE: this script is the historical record of the API-key scheme, which is
+#   being retired. `python -m rolodex_v1.fetch_corpus` fetches this same bundle
+#   with a Firebase bearer, the credential the files routes already took; see
+#   AGENTS.md, "Fetching a corpus". The key still works today, and the hints
+#   below are about the key rather than about the client.
+#
 # This is NOT the Firebase-bearer auth that dump_all_source_docs.sh uses.
 # The handler requires:
 #   * a MASTER api key (one with no allowed_sources restriction) -> else 403

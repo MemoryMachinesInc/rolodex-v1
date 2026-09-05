@@ -221,22 +221,24 @@ and a corpus that changes underneath a half-finished profile set is one nobody
 can explain afterwards. `src/rolodex_v1/memorymachines.py` is the client;
 `fetch_corpus.py` is the CLI. Both were reverse-engineered from the two shell
 scripts at the repo root, which remain the working record of what the endpoints
-accept.
+accept — with one exception: `fetch_resolved_entities_bundle.sh` still sends an
+`x-api-key`, and that is the one thing it no longer records correctly.
 
-**The two halves take two different credentials, and one API key cannot fetch a
-corpus.** The bundle route takes a master `x-api-key` (`$MM_API_KEY`). The files
-routes go through the API's `_require_firebase_principal_from_request` and reject
-an API key with 403, so they need a Firebase refresh token (`$MM_REFRESH_TOKEN`)
-exchanged at `securetoken.googleapis.com` for an ID token that lives an hour.
-Each half asks for its own credential at the point it needs it and names the
-variable it wanted, because a 403 from the files route otherwise reads as a
-permissions problem with the key you *do* have. `--only bundle` and
-`--only source-docs` run one half on a machine holding one credential.
+**One credential fetches a whole corpus.** Both halves take a Firebase refresh
+token (`$MM_REFRESH_TOKEN`), exchanged at `securetoken.googleapis.com` for an ID
+token that lives about an hour and rides on every request as
+`Authorization: Bearer`. The bundle route used to want a master `x-api-key` and
+no longer does — API-key auth is being retired — so `--only bundle` and
+`--only source-docs` are now about wanting one half, not about holding one of
+two credentials. **Never send both**: the platform rejects a request carrying an
+API key and a bearer together, so `memorymachines.py` builds no `x-api-key`
+header at all. Minting that bearer is not this repo's code — see *The token
+client is a dependency, not a copy* at the end of this section.
 
 - **No secret goes in the config file.** `[fetch]` names the *variable*
-  (`api_key_env`, `refresh_token_env`); the value is read by `credentials` from
-  the environment or the gitignored `.env.local`. A key in a config is a key in
-  every copy of that config, and this one is gitignored only by convention.
+  (`refresh_token_env`); the value is read by `credentials` from the environment
+  or the gitignored `.env.local`. A key in a config is a key in every copy of
+  that config, and this one is gitignored only by convention.
   The refresh token has two more places it may be found, both outside the
   repo and both where the Engramme desktop app's own dump script looks: the
   token file `~/.engramme/engramme_refresh_token.txt`, and last the macOS
@@ -250,9 +252,12 @@ permissions problem with the key you *do* have. `--only bundle` and
   `environment = "prod"` would ask a production API for somebody's documents on
   the strength of nothing the user wrote down. So is a table that does not
   name its `environment`: the key has no default, because it is the one value
-  that decides whose API is asked. Unknown keys are rejected too — a misspelled
-  `sources` would quietly fetch all thirty source types. The table may hold
-  `environment`, `base_url`, `sources` and the two credential-variable names,
+  that decides whose API is asked — and it picks the Firebase project the
+  refresh token was minted against as well as the API host, which is why a
+  credential does not carry between environments. Unknown keys are rejected too
+  — a misspelled `sources` would quietly fetch all thirty source types. The
+  table may hold `environment`, `base_url`, `sources` and `refresh_token_env`
+  (a leftover `api_key_env` is accepted and ignored — `settings.py` says why),
   and nothing that changes what the bundle *is*: there is no `case` filter and
   no `top_k`, because the bundle lands under one fixed name and a subset under
   that name is a different artifact nothing downstream can tell apart.
@@ -262,9 +267,18 @@ permissions problem with the key you *do* have. `--only bundle` and
   id *means*, so replacing it under a half-built profile set would detach the
   profiles already bought from the ids that name them. `--dry-run` says which
   it would do.
-- **The ID token is re-minted on a timer, not on a 401.** A download run outlives
-  an hour, and rediscovering the expiry as a failed request would file it as a
-  missing document rather than an expired credential.
+- **The ID token is replaced on a deadline *and* on a 401.** The deadline is the
+  provider's: the lifetime the exchange itself reported, less a skew margin,
+  rather than a number this repo invented. A download run outlives an hour, and
+  rediscovering the expiry as a failed request would file it as a missing
+  document rather than an expired credential. The 401 retry is `_get`'s, and is
+  the backstop for the case a deadline cannot cover — the reported lifetime and
+  this machine's clock disagreeing. It re-mints **once** and asks again, because
+  a token the API keeps refusing must fail with the API's own 401 rather than
+  three of them, and it stands down when `refresh()` answers False (nothing left
+  to mint from). A **403 is never retried**: it is the account being refused —
+  the email is not allowlisted for that route, or the user has no technical
+  access — and a fresh token is the same account.
 - **A truncated bundle is refused rather than written.** The server caps `top_k`
   at 50,000 and reports `count` against `total_in_bundle`; a bundle short of its
   own total is a corpus missing people, and every count downstream would still
@@ -286,6 +300,46 @@ permissions problem with the key you *do* have. `--only bundle` and
   its input could not be re-run when the shape turns out to have been misread.
 - Item ids become filenames, so they are sanitized rather than trusted: an id
   carrying `..` would otherwise write outside the corpus.
+
+### The token client is a dependency, not a copy
+
+**This repo depends on `z-r-research_memorome` for the token client.** The
+minting — the `securetoken` exchange, the replacement deadline, the difference
+between a revoked credential and a rate limit, the account a token belongs to —
+lives in `memorome_takeout.firebase_token` and is imported. It was copied into
+three repos once; three copies of a security-adjacent client drift in three
+directions, and one of them is always the one nobody fixed.
+
+- **It must sit beside this checkout**, at `../z-r-research_memorome` — the two
+  repos side by side under the same parent. It publishes to no index, so the
+  path *is* the source; a checkout somewhere else does not install.
+- **How it is wired**, already done in `pyproject.toml` and to be kept that way:
+
+  ```toml
+  [project]
+  dependencies = ["z-r-research-memorome"]
+
+  [tool.uv.sources]
+  z-r-research-memorome = { path = "../z-r-research_memorome", editable = true }
+  ```
+
+  then `uv sync`. Editable, so a fix in the memorome repo is a fix here with no
+  reinstall — and so a breaking change there surfaces the next time this repo
+  runs, which is the cost of the seam and is worth naming.
+- **It adds no third-party dependency.** The package declares
+  `dependencies = []` and the imported module is stdlib-only, so nothing of that
+  repo's research pipeline — `yaml`, `tqdm`, `research_utils` — comes with it.
+  Keep it that way: if the import ever starts dragging a tree in, that is a bug
+  to fix upstream rather than absorb here.
+- **`ty` is pointed at the sibling separately** (`[tool.ty.environment]
+  extra-paths`), because setuptools installs editable packages behind an import
+  hook that a static checker cannot follow. Same path, same assumption.
+- **Credential discovery stays here.** `fetch_corpus.read_refresh_token`
+  searches the environment, `.env.local`, the desktop app's token file and the
+  keychain; `FirebaseAuth` passes what it found as `refresh_token=`, which makes
+  the provider skip its own environment search entirely. Do not move that chain
+  upstream, and do not reimplement the minting downstream — `FirebaseAuth` is an
+  adapter, and its whole job is `Transport` in, `Bearer` out.
 
 ## Where the data is configured
 
@@ -574,6 +628,10 @@ read `modal app logs` before waiting on it.
 ## Conventions
 
 - Dependencies are added with `uv add`, never `pip install`.
+- One dependency is a **sibling checkout**: `z-r-research-memorome`, installed
+  from `../z-r-research_memorome` and editable, for the Firebase token client in
+  `memorome_takeout.firebase_token`. Both repos must sit under the same parent
+  directory or `uv sync` cannot find it. See *Fetching a corpus*.
 - The Claude Agent SDK spawns the `claude` CLI as a subprocess, so a
   pip-only environment fails at *runtime*, not at install time. Node ≥18 and
   `@anthropic-ai/claude-code` must be present. Only a real run needs them:

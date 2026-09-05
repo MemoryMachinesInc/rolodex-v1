@@ -53,13 +53,33 @@ uv run python -m rolodex_v1.fetch_corpus               # the bundle and the docu
 uv run python -m rolodex_v1.fetch_corpus --from-dump ./source_docs_dump
 ```
 
-**The two halves need two different credentials.** The bundle takes a master
-`x-api-key` (`$MM_API_KEY`); the documents take a Firebase refresh token
-(`$MM_REFRESH_TOKEN`), because the files routes reject an API key outright. Run
-`--only bundle` or `--only source-docs` if you hold one of the two. Documents
-arrive as JSON and land as `.txt`, which is what the pack builder reads. The
-`[fetch]` table must name its `environment`, and an existing bundle is left
-alone unless you pass `--force`.
+**One credential fetches both halves**: a Firebase refresh token
+(`$MM_REFRESH_TOKEN`), exchanged for the short-lived ID token that the bundle
+route and the files routes both take as a bearer. The bundle used to want a
+master `x-api-key` and no longer does. Run `--only bundle` or
+`--only source-docs` when you want just one half. Documents arrive as JSON and
+land as `.txt`, which is what the pack builder reads. The `[fetch]` table must
+name its `environment`, and an existing bundle is left alone unless you pass
+`--force`.
+
+Minting that token is not this repo's code. It comes from
+`memorome_takeout.firebase_token` in **`z-r-research_memorome`, which must be
+checked out beside this repo** — `../z-r-research_memorome`, both under the same
+parent directory. It is wired up already:
+
+```toml
+[project]
+dependencies = ["z-r-research-memorome"]
+
+[tool.uv.sources]
+z-r-research-memorome = { path = "../z-r-research_memorome", editable = true }
+```
+
+`uv sync` installs it from that path (it is published to no index, so the path
+is the only source) and editable, so a fix there needs no reinstall here. The
+module is stdlib-only, so it brings no third-party dependency with it. Finding
+the refresh token in the first place stays this repo's job — the environment,
+`.env.local`, the desktop app's token file, then the macOS keychain.
 
 Point the checkout at a corpus by copying `configs/rolodex-v1.toml.example`
 to `configs/rolodex-v1.toml`. One key moves everything together:
