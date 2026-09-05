@@ -107,13 +107,20 @@ CONFIGURABLE = frozenset({"data", *LAYOUT})
 # `top_k`, aliases off. The bundle lands under one fixed name, and a subset under
 # that name is a different artifact nothing downstream can tell apart; see
 # `memorymachines.fetch_bundle`.
+#
+# `api_key_env` is vestigial: both API routes take the Firebase bearer now, so
+# nothing reads it. It stays *accepted* here, and ignored, because the configs
+# that still name it are machine-local and gitignored -- this repository can
+# neither see them nor edit them, so rejecting the key as unknown would turn a
+# credential change made here into a broken fetch on a laptop nobody remembers
+# to update. It is out of the example config and out of `FetchSettings`;
+# tolerating it is the compatibility, not a knob anyone should set.
 FETCH_CONFIGURABLE = frozenset(
     {"environment", "base_url", "sources", "api_key_env", "refresh_token_env"}
 )
 
-#: Where each credential is read from unless [fetch] names another variable.
-DEFAULT_API_KEY_ENV = "MM_API_KEY"
-# The *name* of a variable, not a token.
+#: Where the one credential is read from unless [fetch] names another variable.
+#: The *name* of a variable, not a token.
 DEFAULT_REFRESH_TOKEN_ENV = "MM_REFRESH_TOKEN"  # noqa: S105
 
 
@@ -126,13 +133,18 @@ class FetchSettings:
     rather than inventing a default environment and asking a production API for
     somebody's documents. ``environment`` has no default for the same reason --
     it is the one value that decides whose API is asked, so it is the one the
-    user has to have written down.
+    user has to have written down. It also picks the Firebase project the
+    refresh token must have been minted against, which is why a credential does
+    not carry between environments.
+
+    One credential name, not two: the bundle route takes the same Firebase
+    bearer the files routes do, and an ``api_key_env`` in a config file is read
+    past rather than stored.
     """
 
     environment: str
     base_url: str | None = None
     sources: tuple[str, ...] | None = None
-    api_key_env: str = DEFAULT_API_KEY_ENV
     refresh_token_env: str = DEFAULT_REFRESH_TOKEN_ENV
 
 
@@ -308,11 +320,11 @@ def fetch_table(document: Mapping[str, Any], path: Path) -> FetchSettings | None
             raise ValueError(f"{path}: [fetch].sources must be a list of strings")
         sources = tuple(sources)
 
+    # `api_key_env` is deliberately not read: see FETCH_CONFIGURABLE.
     return FetchSettings(
         environment=environment,
         base_url=base_url,
         sources=sources,
-        api_key_env=table.get("api_key_env", DEFAULT_API_KEY_ENV),
         refresh_token_env=table.get("refresh_token_env", DEFAULT_REFRESH_TOKEN_ENV),
     )
 

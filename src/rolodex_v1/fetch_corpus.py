@@ -9,11 +9,18 @@ per entity should not also be the thing that decides to pull thousands of
 documents over the network, and a corpus that changes underneath a half-finished
 profile set is a corpus nobody can explain afterwards.
 
-**The two halves need two different credentials** (see `memorymachines`): an
-``x-api-key`` master key for the bundle, and a Firebase refresh token for the
-documents, because the files routes reject an API key outright. Either half can
-be run alone (`--only bundle`, `--only source-docs`), which is what a machine
-holding one of the two credentials should do.
+**One credential fetches the whole corpus** (see `memorymachines`): a Firebase
+refresh token, exchanged for the short-lived ID token that both the bundle route
+and the files routes take as a bearer. The bundle used to want a master
+``x-api-key`` and no longer does, so `--only bundle` and `--only source-docs`
+are now about wanting one half -- re-pulling documents under a bundle you intend
+to keep, say -- rather than about holding one of two credentials.
+
+Finding that refresh token is this module's job and stays here. The exchange is
+not: `memorymachines.FirebaseAuth` hands the value to the provider in
+``memorome_takeout.firebase_token``, which is why `read_refresh_token` below
+searches four places the provider has never heard of and then simply passes what
+it found.
 
 Documents arrive as one JSON object per document and land as `.txt`, because
 `.txt` at any depth is what the pack builder reads. The conversion is not a
@@ -199,6 +206,11 @@ def fetch_source_docs(
     Returns (written, skipped). Already-present files are skipped without a
     request, so an interrupted fetch resumes instead of re-downloading -- the
     same property the profile checkpoints have, for the same reason.
+
+    Only a `FetchError` is caught per document. A `TokenError` from the minting
+    provider is deliberately let through and ends the run: a credential that has
+    died is not one unreadable record, and catching it here would file the same
+    dead token as thousands of individually skipped documents.
     """
     written = skipped = 0
     for source in sources:
@@ -239,8 +251,8 @@ def main(argv: list[str] | None = None) -> int:
         choices=("bundle", "source-docs"),
         default=None,
         help=(
-            "fetch one half. The two halves need different credentials, so a "
-            "machine holding only one of them runs only its half."
+            "fetch one half. Both halves take the same credential now, so this "
+            "is about which half you want rather than which key you hold."
         ),
     )
     parser.add_argument(
@@ -311,75 +323,108 @@ def main(argv: list[str] | None = None) -> int:
     wants_bundle = args.only in (None, "bundle")
     wants_docs = args.only in (None, "source-docs")
     bundle_exists = paths.entities_bundle.exists()
+    # A bundle already on disk is left alone -- it is what every checkpointed
+    # entity id means -- and that decides the credential too: a run with nothing
+    # left to fetch asks for nothing, and so raises no keychain dialog.
+    skip_bundle = wants_bundle and bundle_exists and not args.force
+    needs_credential = wants_docs or (wants_bundle and not skip_bundle)
 
     log.info("config   %s", paths.origin)
     log.info("base     %s (%s)", base_url, fetch.environment)
     if wants_bundle:
         log.info(
-            "bundle   -> %s (%s; needs $%s)",
+            "bundle   -> %s (%s)",
             paths.entities_bundle,
             "exists, skipped unless --force" if bundle_exists else "absent",
-            fetch.api_key_env,
         )
     if wants_docs:
         sources = fetch.sources or DEFAULT_SOURCES
+        log.info("docs     -> %s (%d source types)", paths.source_docs, len(sources))
+    if needs_credential:
+        # One line for both halves, because there is one credential -- and only
+        # when the run is going to spend it. It names where the real run will
+        # look rather than reporting whether the token is there: going looking
+        # is what raises the keychain's consent dialog, on the command whose
+        # whole promise is that it touches nothing.
         log.info(
-            "docs     -> %s (needs $%s, %d source types)",
-            paths.source_docs,
+            "auth     Firebase refresh token from $%s, %s, or the app's keychain",
             fetch.refresh_token_env,
-            len(sources),
+            TOKEN_FILE,
         )
     if args.dry_run:
         log.info("dry run: nothing fetched, nothing written")
         return 0
 
     status = 0
-    if wants_bundle and bundle_exists and not args.force:
+    if skip_bundle:
         log.info(
             "bundle   %s exists; skipped (--force replaces it)", paths.entities_bundle
         )
-    elif wants_bundle:
-        try:
-            api_key = credentials.read_env_value(fetch.api_key_env)
-            bundle = fetch_bundle(base_url, api_key)
-        except RuntimeError as error:
-            log.error("bundle: %s", error)
-            status = 1
-        else:
-            paths.entities_bundle.parent.mkdir(parents=True, exist_ok=True)
-            # Written the way the checked-in bundles are, so a fetched corpus
-            # and a hand-delivered one are the same file byte for byte.
-            paths.entities_bundle.write_text(
-                json.dumps(bundle, indent=2) + "\n", encoding="utf-8"
-            )
-            log.info(
-                "bundle   %d entities -> %s", bundle["count"], paths.entities_bundle
-            )
 
-    if wants_docs:
+    # Both halves live under the one credential read, rather than each taking a
+    # nullable one: the credential is the same for either now, and reading it
+    # per half would raise the keychain's consent dialog twice on the machine
+    # where the keychain is the source. `needs_credential` is true exactly when
+    # one of the two blocks below will run, so there is no path here that
+    # fetches without a token and none that reads one it never spends.
+    #
+    # A credential that cannot be read ends the run rather than costing it one
+    # half: there is no longer a second credential the other half could have
+    # been holding, so whatever stopped this read stops both.
+    if needs_credential:
         try:
-            refresh_token = read_refresh_token(fetch.refresh_token_env)
             auth = FirebaseAuth(
-                refresh_token=refresh_token,
-                firebase_api_key=environment.firebase_api_key,
-            )
-            written, skipped = fetch_source_docs(
-                base_url,
-                auth,
-                paths.source_docs,
-                sources=fetch.sources or DEFAULT_SOURCES,
-                force=args.force,
+                refresh_token=read_refresh_token(fetch.refresh_token_env),
+                environment=fetch.environment,
+                refresh_token_env=fetch.refresh_token_env,
             )
         except RuntimeError as error:
-            log.error("source docs: %s", error)
+            log.error("credential: %s", error)
             return 1
-        log.info(
-            "docs     %d written, %d skipped -> %s", written, skipped, paths.source_docs
-        )
-        if skipped:
-            # Each skip was named as it happened; the exit code carries the fact
-            # past the log, so a run that refused documents cannot report success.
-            status = 1
+
+        if wants_bundle and not skip_bundle:
+            try:
+                bundle = fetch_bundle(base_url, auth)
+            except RuntimeError as error:
+                log.error("bundle: %s", error)
+                status = 1
+            else:
+                paths.entities_bundle.parent.mkdir(parents=True, exist_ok=True)
+                # Written the way the checked-in bundles are, so a fetched
+                # corpus and a hand-delivered one are the same file byte for
+                # byte.
+                paths.entities_bundle.write_text(
+                    json.dumps(bundle, indent=2) + "\n", encoding="utf-8"
+                )
+                log.info(
+                    "bundle   %d entities -> %s",
+                    bundle["count"],
+                    paths.entities_bundle,
+                )
+
+        if wants_docs:
+            try:
+                written, skipped = fetch_source_docs(
+                    base_url,
+                    auth,
+                    paths.source_docs,
+                    sources=fetch.sources or DEFAULT_SOURCES,
+                    force=args.force,
+                )
+            except RuntimeError as error:
+                log.error("source docs: %s", error)
+                return 1
+            log.info(
+                "docs     %d written, %d skipped -> %s",
+                written,
+                skipped,
+                paths.source_docs,
+            )
+            if skipped:
+                # Each skip was named as it happened; the exit code carries the
+                # fact past the log, so a run that refused documents cannot
+                # report success.
+                status = 1
 
     return status
 
