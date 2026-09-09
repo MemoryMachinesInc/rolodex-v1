@@ -7,7 +7,7 @@
 [paths]
 
 # The owner directory: one person's whole corpus. Usually the only key you set,
-# because every location below defaults to somewhere inside it.
+# because every location below defaults to somewhere inside it. I recommend the first name (blake, obama, will, etc.)
 data = "../data/<owner>"
 
 # The evidence. Searched recursively for *.txt; other extensions are ignored.
