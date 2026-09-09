@@ -79,20 +79,15 @@ cp .env.local.example .env.local
 | --- | --- |
 | `OPENAI_API_KEY_SMALL` | `--regime in-context` with an OpenAI model |
 | `QWEN_API_KEY` | `--regime in-context` with a self-hosted Qwen model |
-| `MM_REFRESH_TOKEN` | downloading a corpus with `fetch_corpus` |
 
 `OPENAI_API_KEY_SMALL` falls back to `OPENAI_API_KEY` if unset. Environment
 variables win over the file, and each value is read only when the command that
 needs it actually runs, so you never need keys for a path you are not using.
 
-The agentic regime is the exception: it needs no key here, because it
-authenticates through the Claude CLI you installed in Step 4. Run `claude`
-once and log in, or set `ANTHROPIC_API_KEY` for the CLI's own benefit. This
-project never reads that variable.
-
-`MM_REFRESH_TOKEN` is optional even for downloads: if it is unset, the tool
-looks in `~/.engramme/engramme_refresh_token.txt` and then in the macOS
-keychain item the Engramme desktop app writes.
+Two things are **not** configured here. The agentic regime authenticates
+through the Claude CLI you installed in Step 4, so run `claude` once and log
+in. And downloading a corpus uses your Engramme sign-in, covered in its own
+section below.
 
 ### Step 6: Point the checkout at a corpus
 
@@ -160,14 +155,26 @@ Add this to `configs/rolodex-v1.toml`:
 environment = "prod"   # required: prod, staging or dev
 ```
 
-`environment` has no default because it decides whose API is asked. It also
-selects the Firebase project your refresh token must have been minted against,
-so a credential does not carry between environments.
+`environment` has no default, because it decides whose API is asked. Use
+`prod` unless you have been told otherwise. You can also set `sources` to limit
+which document types are pulled; the default is all of them.
 
-Optional keys: `base_url` overrides the environment's API base, `sources`
-limits which document types are pulled (the default is all of them), and
-`refresh_token_env` names a different variable to read the credential from.
-No secret ever goes in this file — it names the variable, not the value.
+### Sign in to Engramme
+
+The download authenticates as you, against the Engramme API. **The credential
+comes from your macOS keychain, where the Engramme desktop app puts it when you
+sign in.** So the setup is just: install the Engramme desktop app and log in.
+The tool finds the credential on its own — there is nothing to copy or paste.
+
+The first time it reads the keychain, macOS asks your permission. Click
+**Always Allow** so later runs are not interrupted.
+
+If you are not on a Mac, or you would rather not use the keychain, put the
+token in `.env.local` instead and the tool will prefer it:
+
+```bash
+MM_REFRESH_TOKEN="your-engramme-refresh-token"
+```
 
 ### Run the download
 
@@ -194,11 +201,8 @@ uv run python -m rolodex_v1.fetch_corpus --only source-docs
 uv run python -m rolodex_v1.fetch_corpus --from-dump ./source_docs_dump
 ```
 
-Documents arrive as JSON and are written as `.txt` as they land, so an
-interrupted download leaves usable evidence rather than a directory the profile
-builder reads as an empty corpus. If any document is refused, it is named in
-the log and the command exits non-zero, so a corpus quietly missing documents
-cannot pass for a complete one.
+If any document cannot be read, it is named in the log and the command exits
+non-zero, so an incomplete corpus never passes for a finished one.
 
 ## How to Build Profiles
 
