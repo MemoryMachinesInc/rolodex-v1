@@ -36,3 +36,4 @@ rolodex-v1*.toml
 .env.*.local
 entity_lists
 umb-top-people.txt
+!configs/rolodex-v1.toml.example
