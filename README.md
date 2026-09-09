@@ -36,7 +36,7 @@ the only way to install it: **both repos must sit side by side under the same
 parent directory.**
 
 ```text
-~/dev/
+~/[parent directory]/
 ├── rolodex-v1/            # this repo
 └── z-r-research_memorome/ # must be here, or `uv sync` fails
 ```
