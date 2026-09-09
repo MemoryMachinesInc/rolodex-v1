@@ -41,10 +41,26 @@ parent directory.**
 └── z-r-research_memorome/ # must be here, or `uv sync` fails
 ```
 
+**Check out the `firebase-token-importable` branch**, not `main`. That branch
+is what packages the token client so another project can install it; `main`
+does not have it yet. It is [PR #11][pr11], and once that merges, plain `main`
+will work and the `--branch` flag can go.
+
 ```bash
 # from the parent directory that holds rolodex-v1
-git clone https://github.com/MemoryMachinesInc/z-r-research_memorome.git
+git clone --branch firebase-token-importable \
+    https://github.com/MemoryMachinesInc/z-r-research_memorome.git
 ```
+
+Already cloned it? Switch the existing checkout over:
+
+```bash
+cd ../z-r-research_memorome
+git fetch origin firebase-token-importable
+git checkout firebase-token-importable
+```
+
+[pr11]: https://github.com/MemoryMachinesInc/z-r-research_memorome/pull/11
 
 ### Step 3: Install dependencies
 
@@ -453,8 +469,10 @@ rolodex-v1/
 
 ## Troubleshooting
 
-**`uv sync` fails to find `z-r-research-memorome`.** The sibling checkout is
-missing. See Step 2 — both repos must share a parent directory.
+**`uv sync` cannot find or build `z-r-research-memorome`.** Either the sibling
+checkout is missing, or it is on the wrong branch. Both repos must share a
+parent directory, and the sibling must be on `firebase-token-importable` —
+`main` is not installable as a package yet. See Step 2.
 
 **A dry run says `missing` for an input.** The path in your config is wrong.
 Remember that relative paths resolve against the config file's directory, not
