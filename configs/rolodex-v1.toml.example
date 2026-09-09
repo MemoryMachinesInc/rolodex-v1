@@ -1,0 +1,46 @@
+# Copy to `configs/rolodex-v1.toml` and edit. The real file is gitignored.
+#
+# Found by walking up from the working directory. `--config FILE` overrides it,
+# and beats $ROLODEX_V1_CONFIG. Relative paths below resolve against THIS
+# FILE's directory, so `../data` is a `data/` beside the repo root.
+
+[paths]
+
+# The owner directory: one person's whole corpus. Usually the only key you set,
+# because every location below defaults to somewhere inside it. I recommend the first name (blake, obama, will, etc.)
+data = "../data/<owner>"
+
+# The evidence. Searched recursively for *.txt; other extensions are ignored.
+# Default: `source_docs/` under `data`.
+# source_docs = "/Volumes/corpus/obama"
+
+# Who gets profiled, and the names retrieval searches for. Must be built from
+# the same documents. Default: `resolved_entities_bundle.json` under `data`.
+# entities_bundle = "/Volumes/corpus/obama/resolved_entities_bundle.json"
+
+# Where profiles and their checkpoints are written. Default: `data` itself.
+# out_dir = "/Volumes/corpus/obama"
+
+
+# Add this table to fetch the two inputs above from the API instead of being
+# handed them: `uv run python -m rolodex_v1.fetch_corpus --dry-run`. Without
+# it, fetching is refused rather than aimed at a default API.
+# [fetch]
+
+# REQUIRED, no default: prod | staging | dev. Decides whose API is asked, and
+# which Firebase project your credential must belong to.
+# environment = "prod"
+
+# Which document types to pull. Default: every type the API defines.
+# sources = ["email", "pdf"]
+
+# Override the environment's API base. For testing against a local server.
+# base_url = "https://..."
+
+# The variable holding your Engramme refresh token. Never the token itself:
+# a secret in a config is a secret in every copy of it.
+# refresh_token_env = "MM_REFRESH_TOKEN"
+
+# There is deliberately no top_k, case or include_aliases. The bundle is always
+# fetched whole and with aliases, because a subset saved under the same
+# filename is a different artifact that nothing downstream can tell apart.

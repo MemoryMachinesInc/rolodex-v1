@@ -4,7 +4,18 @@ version = "0.1.0"
 description = "Grounded Rolodex profile generation from a memories bundle or source-document chunks"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "claude-agent-sdk>=0.2.131",
+    "pydantic>=2.13.5",
+    "tiktoken>=0.14.0",
+    "z-r-research-memorome",
+]
+
+# A SIBLING CHECKOUT: both repos must sit side by side under one parent, because
+# this one publishes to no index and the path is the only source. Why it is a
+# dependency rather than a copy is in AGENTS.md, "Fetching a corpus".
+[tool.uv.sources]
+z-r-research-memorome = { path = "../z-r-research_memorome", editable = true }
 
 [dependency-groups]
 dev = [
@@ -52,6 +63,19 @@ skip-magic-trailing-comma = false
 
 [tool.ty.environment]
 python-version = "3.13"
+# `z-r-research-memorome` is installed editable by setuptools, which does it with
+# an import hook rather than a real directory in site-packages -- the interpreter
+# follows that at run time and a static checker cannot. Pointing ty at the
+# sibling checkout is what makes `memorome_takeout` resolvable here, and it is
+# the same path `[tool.uv.sources]` above installs from: both assume the two
+# repos sit side by side under one parent.
+extra-paths = ["../z-r-research_memorome"]
+
+[tool.ty.src]
+# deploy/ runs on Modal's infrastructure, not here: `modal` is deliberately not
+# a dependency of this project, so its imports are never resolvable locally and
+# ty would fail the commit gate on a file it cannot meaningfully check.
+exclude = ["deploy"]
 
 [tool.ty.rules]
 # Third-party packages that ship no types are not this project's problem.
