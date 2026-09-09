@@ -1,65 +1,46 @@
-# Copy to `configs/rolodex-v1.toml` to point this checkout at a corpus.
+# Copy to `configs/rolodex-v1.toml` and edit. The real file is gitignored.
 #
-# The real file is gitignored: where the data sits is a property of the machine,
-# not of the project. Discovery walks up from the working directory looking for
-# `configs/rolodex-v1.toml`, so one file serves runs started anywhere inside the
-# checkout.
-#
-# Precedence per location, highest first:
-#   1. the command-line flag
-#   2. that location's ROLODEX_V1_* environment variable
-#   3. its own key below
-#   4. `data` below, joined with the built-in name
-#   5. `data/` in the working directory
-#
-# Relative paths resolve against THIS FILE's directory, not the working
-# directory -- so a `data/` beside the repo root is `../data` from in here.
-# `~` is expanded. Absolute paths are the unambiguous option.
+# Found by walking up from the working directory. `--config FILE` overrides it,
+# and beats $ROLODEX_V1_CONFIG. Relative paths below resolve against THIS
+# FILE's directory, so `../data` is a `data/` beside the repo root.
 
 [paths]
 
-# The data root. Setting only this moves all three locations together, which is
-# the usual case: an external disk, a scratch volume, a shared corpus.
-data = "../data"
+# The owner directory: one person's whole corpus. Usually the only key you set,
+# because every location below defaults to somewhere inside it.
+data = "../data/<owner>"
 
-# Individual overrides, for when one location does not live under the root.
-# Each defaults to the name shown, resolved under `data`. Name them separately
-# whenever the two inputs did not arrive as one directory -- an export dropped
-# beside the bundle rather than inside it is the usual case.
-# source_docs = "../data/obama"
-# entities_bundle = "../data/obama/resolved_entities_bundle.json"
-# out_dir         = "."
-#
-# `source_docs` is walked RECURSIVELY for `*.txt`, so the exporter's grouping by
-# origin (`email/`, `pdf/`, `plaud/`, ...) can be left exactly as it arrived.
-# Where the file came from is not evidence; only its text is.
+# The evidence. Searched recursively for *.txt; other extensions are ignored.
+# Default: `source_docs/` under `data`.
+# source_docs = "/Volumes/corpus/obama"
 
-# ── fetching a corpus instead of pointing at one ────────────────────────────
-# With a [fetch] table, `python -m rolodex_v1.fetch_corpus` fills the two
-# locations above from the memorymachines API. Without one, fetching is refused
-# rather than defaulted -- inventing an environment here would ask a production
-# API for somebody's documents on the strength of nothing written down.
-#
-# ONE CREDENTIAL FETCHES BOTH HALVES: a Firebase refresh token
-# (-> $MM_REFRESH_TOKEN), exchanged for the short-lived ID token that the bundle
-# route and the files routes both take as a bearer. The bundle used to want a
-# master `x-api-key` and no longer does. `--only bundle` / `--only source-docs`
-# picks a half; it is no longer a way of working around a missing credential.
-#
-# No secret goes in this file: it names the VARIABLE, and the value is read from
-# the environment or the gitignored .env.local.
-#
-# Both halves are incremental. Documents already on disk are skipped, so an
-# interrupted fetch resumes; an existing bundle is left alone unless --force,
-# because it is what every checkpointed entity id means.
+# Who gets profiled, and the names retrieval searches for. Must be built from
+# the same documents. Default: `resolved_entities_bundle.json` under `data`.
+# entities_bundle = "/Volumes/corpus/obama/resolved_entities_bundle.json"
 
+# Where profiles and their checkpoints are written. Default: `data` itself.
+# out_dir = "/Volumes/corpus/obama"
+
+
+# Add this table to fetch the two inputs above from the API instead of being
+# handed them: `uv run python -m rolodex_v1.fetch_corpus --dry-run`. Without
+# it, fetching is refused rather than aimed at a default API.
 # [fetch]
-# environment = "prod"          # REQUIRED, prod | staging | dev. No default:
-#                               # it decides whose API is asked.
-# base_url = "https://..."      # override the environment's base
-# sources = ["email", "pdf"]    # default: every source type the API defines
+
+# REQUIRED, no default: prod | staging | dev. Decides whose API is asked, and
+# which Firebase project your credential must belong to.
+# environment = "prod"
+
+# Which document types to pull. Default: every type the API defines.
+# sources = ["email", "pdf"]
+
+# Override the environment's API base. For testing against a local server.
+# base_url = "https://..."
+
+# The variable holding your Engramme refresh token. Never the token itself:
+# a secret in a config is a secret in every copy of it.
 # refresh_token_env = "MM_REFRESH_TOKEN"
-#
+
 # There is deliberately no top_k, case or include_aliases. The bundle is always
-# fetched whole and with aliases: a subset under the same filename is a
-# different artifact that nothing downstream can tell apart.
+# fetched whole and with aliases, because a subset saved under the same
+# filename is a different artifact that nothing downstream can tell apart.

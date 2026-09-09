@@ -53,18 +53,92 @@ cd rolodex-v1
 uv sync
 ```
 
-### Step 4: Install Node (only for the agentic regime)
+### Step 4: Configure where your data lives
 
-The default regime runs a Claude agent, which the SDK launches as a
-command-line subprocess. If you plan to use it, install Node 18 or newer and
-the Claude CLI:
+This is the step that matters most. Start by copying the template, which is
+gitignored because where your data sits is a property of your machine:
 
 ```bash
-npm install -g @anthropic-ai/claude-code
+cp configs/rolodex-v1.toml.example configs/rolodex-v1.toml
 ```
 
-Skip this if you will only use `--regime in-context`. Nothing here is needed
-for `--dry-run` or for the test suite.
+#### The owner directory
+
+A corpus belongs to one person — the **owner** whose documents these are. All
+of that owner's data lives in a single parent folder, and **that folder is
+normally the only path you have to configure**:
+
+```toml
+[paths]
+data = "../data/blake"
+```
+
+Everything else is derived from it. Lay the folder out like this:
+
+```text
+data/blake/                        ←  the owner directory  ([paths].data)
+├── resolved_entities_bundle.json  ←  input: who gets profiled
+├── source_docs/                   ←  input: the evidence
+│   ├── email/
+│   ├── pdf/
+│   ├── plaud/
+│   └── text/
+├── profiles-opus5-agentic-p50-adad5978bb-v1.json    ←  output
+└── profiles-opus5-agentic-p50-adad5978bb-v1.work/   ←  checkpoints
+```
+
+Four things to know about that layout:
+
+- **The bundle must have exactly that filename**, sitting directly in the
+  owner directory.
+- **`source_docs/` is searched recursively for `*.txt`.** The subfolder names
+  are just how the export happened to group things and carry no meaning, so
+  leave them as they arrived. Anything that is not a `.txt` file is ignored.
+- **Results are written back into the same directory**, beside the inputs.
+- **Both inputs must come from the same export.** A bundle built over
+  different documents produces people whose names appear nowhere in the text,
+  which looks like a working run that profiles nobody.
+
+#### One directory per owner
+
+Keep owners side by side and give each one its own config file:
+
+```text
+data/
+├── blake/
+├── obama/
+└── umb/
+```
+
+```bash
+uv run python -m rolodex_v1.build_profiles \
+    --dry-run --config configs/rolodex-v1.blake.toml
+```
+
+Without `--config`, the tool walks up from your working directory looking for
+`configs/rolodex-v1.toml`. The flag beats the `$ROLODEX_V1_CONFIG` variable,
+and both beat that search.
+
+The owner directory only names the corpus; it does not tell the model whose
+Rolodex it is. Pass `--profile-owner "Blake Moody"` for that, and every
+profile's `relationship_to_user` is written relative to that person.
+
+#### If your export is not in that shape
+
+Name the locations individually. Any you leave out still default under `data`:
+
+```toml
+[paths]
+source_docs     = "/Volumes/corpus/obama"
+entities_bundle = "/Volumes/corpus/obama/resolved_entities_bundle.json"
+out_dir         = "/Volumes/corpus/obama"
+```
+
+Relative paths resolve against **the config file's own directory**, not your
+working directory. Give absolute paths to a config kept outside the checkout.
+
+If you do not have a corpus yet, point `data` at where you want the download
+to land and continue to the download section below.
 
 ### Step 5: Add your API keys
 
@@ -85,39 +159,22 @@ variables win over the file, and each value is read only when the command that
 needs it actually runs, so you never need keys for a path you are not using.
 
 Two things are **not** configured here. The agentic regime authenticates
-through the Claude CLI you installed in Step 4, so run `claude` once and log
-in. And downloading a corpus uses your Engramme sign-in, covered in its own
-section below.
+through the Claude CLI (Step 6), so run `claude` once and log in. And
+downloading a corpus uses your Engramme sign-in, covered in its own section
+below.
 
-### Step 6: Point the checkout at a corpus
+### Step 6: Install Node (only for the agentic regime)
 
-Copy the config template. This file is gitignored, because where your data
-sits is a property of your machine.
+The default regime runs a Claude agent, which the SDK launches as a
+command-line subprocess. If you plan to use it, install Node 18 or newer and
+the Claude CLI:
 
 ```bash
-cp configs/rolodex-v1.toml.example configs/rolodex-v1.toml
+npm install -g @anthropic-ai/claude-code
 ```
 
-If both inputs live under one directory, set a single key:
-
-```toml
-[paths]
-data = "/Volumes/corpus/obama"
-```
-
-If they arrived separately, which is the usual case, name them individually:
-
-```toml
-[paths]
-source_docs     = "/Volumes/corpus/obama"
-entities_bundle = "/Volumes/corpus/obama/resolved_entities_bundle.json"
-```
-
-Relative paths resolve against **the config file's own directory**, not your
-working directory. Give absolute paths to a config kept outside the checkout.
-
-If you do not have a corpus yet, leave the paths pointing where you want the
-download to land and continue to the next section.
+Skip this if you will only use `--regime in-context`. Nothing here is needed
+for `--dry-run` or for the test suite.
 
 ### Step 7: Confirm the setup
 
@@ -190,7 +247,7 @@ Both halves are incremental: documents already on disk are skipped, so an
 interrupted download resumes rather than starting over. An existing bundle is
 left alone unless you pass `--force`.
 
-Useful variations:
+Useful variations (very optional):
 
 ```bash
 # just one half
