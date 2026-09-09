@@ -263,6 +263,82 @@ non-zero, so an incomplete corpus never passes for a finished one.
 
 ## How to Build Profiles
 
+### Choose a regime (`--regime`)
+
+There are two ways to write a profile. Both emit the same schema, start from
+the same evidence pack, and attach the same grounding. What differs is what
+the model can do while writing.
+
+| | `--regime agentic` (default) | `--regime in-context` |
+| --- | --- | --- |
+| How it works | a Claude agent gets the pack as a file, plus read-only access to the corpus | one request carrying the whole pack |
+| Evidence | can search the corpus for more | fixed when the request is sent |
+| Rough cost | $0.30–$1.10 per person | $0.03–$0.15 per person |
+| `--max-spend-usd` | works | refused; it reports tokens, not dollars |
+
+**Agentic** is the default and the more thorough of the two. That live corpus
+access is the entire difference: the agent can confirm what the pack shows, or
+go find the sentence the pack missed. It is sandboxed while it does so — every
+tool except `Read`, `Grep` and `Glob` is denied outright, and it cannot look
+outside the pack directory and the corpus.
+
+**In-context** is around ten times cheaper and easier to reason about, because
+the evidence is exactly the pack and nothing more. Use it for wide runs, for
+comparing prompts, or when you want a self-hosted model, which is the one thing
+only this regime can do.
+
+### Choose a model (`--model`)
+
+You can leave this alone. Each regime has a sensible default:
+
+| Regime | Default model |
+| --- | --- |
+| `agentic` | `claude-opus-5` |
+| `in-context` | `gpt-5.6-luna` |
+
+Any model your key can reach will work. The model's short code goes into the
+output filename — `claude-opus-5` becomes `opus5` — so two runs on different
+models never overwrite each other.
+
+**The model id also decides which server receives the request.** An id
+starting with `qwen` goes to a self-hosted deployment; anything else goes to
+OpenAI. There is no second flag that could disagree with it.
+
+To use a self-hosted model, deploy one with `modal deploy
+deploy/modal_qwen.py`, then point the run at it:
+
+```bash
+export ROLODEX_V1_QWEN_BASE_URL=https://<workspace>--rolodex-qwen-serve.modal.run/v1
+export QWEN_API_KEY=<the serving token>
+
+uv run python -m rolodex_v1.build_profiles \
+    --regime in-context --model qwen3.8-27b --effort xhigh --limit 5
+```
+
+The URL can also come from `--qwen-base-url`. It is deliberately not part of
+the output filename: which server happened to be up is a property of your
+machine, not of the profiles. Note that a self-hosted run is billed as GPU time
+by the hour, so nothing here can cap it — watch the Modal dashboard and shut
+the deployment down when you are done.
+
+### Set the reasoning effort (`--effort`)
+
+How much thinking to buy per profile. It applies only to `--regime in-context`;
+the agentic regime has no such dial and rejects the flag.
+
+The accepted values depend on the model, because the two providers use
+different vocabularies:
+
+| Provider | Accepted | Default |
+| --- | --- | --- |
+| OpenAI | `low`, `medium`, `high` | `high` |
+| Qwen | `low`, `medium`, `xhigh` | `xhigh` |
+
+`high` is not a Qwen setting and `xhigh` is not an OpenAI one. Passing the
+wrong one is rejected up front, before any evidence is built or anything is
+spent. Effort is part of the output filename too, since the same model at two
+efforts produces two different sets of profiles.
+
 ### Choose how many people to profile
 
 Because this stage spends money per person, **a real run with no scope is
@@ -305,23 +381,6 @@ uv run python -m rolodex_v1.build_profiles \
 `--max-spend-usd` is rejected for `--regime in-context`, which reports tokens
 rather than dollars. Bound those runs with the scope flags instead.
 
-### Using a self-hosted model (optional)
-
-A model id starting with `qwen` sends the request to your own server instead of
-OpenAI. Deploy one with `modal deploy deploy/modal_qwen.py`.
-
-```bash
-export ROLODEX_V1_QWEN_BASE_URL=https://<workspace>--rolodex-qwen-serve.modal.run/v1
-export QWEN_API_KEY=<the serving token>
-
-uv run python -m rolodex_v1.build_profiles \
-    --regime in-context --model qwen3.8-27b --effort xhigh --limit 5
-```
-
-Self-hosted runs are billed by GPU time rather than per request, so nothing in
-this repo can cap them. Watch the Modal dashboard and shut the deployment down
-when you are finished.
-
 ### Where the output goes
 
 One JSON file in your output directory, mapping entity id to profile:
@@ -333,6 +392,13 @@ profiles-opus5-agentic-p50-adad5978bb-v1.json
          │      │       └── alias probability threshold
          │      └── regime
          └── model
+```
+
+An in-context run carries its effort in the model slot as well, since the same
+model at two efforts is two different results:
+
+```text
+profiles-gpt56luna-high-in-context-p50-adad5978bb-v1.json
 ```
 
 The name encodes the settings, so two runs configured differently never
